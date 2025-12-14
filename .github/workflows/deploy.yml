@@ -1,22 +1,16 @@
-name: Build and Deploy to Azure Functions
+name: Build and Deploy to Railway
 
 on:
   push:
     branches:
       - main
+      - railway-version
   pull_request:
     branches:
       - main
 
 env:
-  AZURE_FUNCTIONAPP_NAME: 'auditsphere-api'
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.'
   NODE_VERSION: '20.x'
-
-# Required for OIDC authentication
-permissions:
-  id-token: write
-  contents: read
 
 jobs:
   build:
@@ -44,46 +38,5 @@ jobs:
         run: npm test
         continue-on-error: true
 
-      - name: Upload build artifact
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: function-app
-          path: |
-            dist/
-            node_modules/
-            host.json
-            package.json
-            prisma/
-          retention-days: 1
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment:
-      name: production
-      url: ${{ steps.deploy.outputs.webapp-url }}
-
-    steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: function-app
-          path: .
-
-      # OIDC Authentication (recommended - no secrets to rotate)
-      - name: Azure Login via OIDC
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Deploy to Azure Functions
-        id: deploy
-        uses: Azure/functions-action@v1
-        with:
-          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-          # No publish-profile needed with OIDC
+  # Railway deploys automatically via GitHub integration
+  # No manual deploy step needed - just connect your repo in Railway dashboard
