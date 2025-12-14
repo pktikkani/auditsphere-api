@@ -6,17 +6,20 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install dependencies
+# Install all dependencies (including dev for build)
 RUN npm ci
 
 # Copy source code
 COPY . .
 
-# Build
+# Build (includes tsc-alias to resolve path aliases)
 RUN npm run build
+
+# Remove dev dependencies
+RUN npm prune --production
 
 # Expose port
 EXPOSE 3000
 
 # Start
-CMD ["npm", "run", "start"]
+CMD ["node", "dist/src/server.js"]
