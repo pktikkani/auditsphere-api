@@ -81,8 +81,8 @@ app.all('/api/auth-debug', async (req: Request, res: Response) => {
 // Microsoft OAuth routes
 app.use('/api/microsoft', microsoftRouter);
 
-// tRPC handler
-app.all('/api/trpc/*', async (req: Request, res: Response) => {
+// tRPC handler (Express 5 requires named wildcard parameter)
+app.all('/api/trpc/*path', async (req: Request, res: Response) => {
   try {
     // Build the full URL
     const protocol = req.headers['x-forwarded-proto'] || 'http';
