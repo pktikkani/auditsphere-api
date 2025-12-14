@@ -505,9 +505,10 @@ export async function runComplianceChecks(
     }
 
     // Get valid access token
-    const accessToken = await TokenManager.getValidToken(userId, connection.tenantId);
+    const tokenManager = new TokenManager(userId, connection.tenantId);
+    const tokenResult = await tokenManager.getValidToken();
 
-    if (!accessToken) {
+    if (!tokenResult) {
       await db.complianceRun.update({
         where: { id: runId },
         data: {
@@ -522,7 +523,7 @@ export async function runComplianceChecks(
     const ctx: CheckContext = {
       userId,
       tenantId: connection.tenantId,
-      accessToken,
+      accessToken: tokenResult.accessToken,
       siteUrls,
     };
 
@@ -580,7 +581,7 @@ export async function runComplianceChecks(
             targetType: checkDef.targetType,
             targetId: 'global',
             status: result.status,
-            resultDetails: result.details,
+            resultDetails: JSON.parse(JSON.stringify(result.details)),
             remediationSteps: result.remediation || null,
             executedAt: new Date(),
             executionTimeMs,
@@ -591,7 +592,7 @@ export async function runComplianceChecks(
             category: checkDef.category,
             severity: checkDef.severity,
             status: result.status,
-            resultDetails: result.details,
+            resultDetails: JSON.parse(JSON.stringify(result.details)),
             remediationSteps: result.remediation || null,
             executedAt: new Date(),
             executionTimeMs,
