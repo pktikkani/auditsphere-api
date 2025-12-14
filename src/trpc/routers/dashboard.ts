@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '../init.js';
-import { db } from '../../lib/db/prisma.js';
+import { db } from '@/lib/db/prisma.js';
 
 export const dashboardRouter = createTRPCRouter({
   /**

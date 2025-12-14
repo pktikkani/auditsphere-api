@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '../init.js';
-import { db } from '../../lib/db/prisma.js';
+import { db } from '@/lib/db/prisma.js';
 
 const auditEventFilterSchema = z.object({
   page: z.number().int().min(1).default(1),

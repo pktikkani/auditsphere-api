@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '../init.js';
-import { db } from '../../lib/db/prisma.js';
+import { db } from '@/lib/db/prisma.js';
 import { TRPCError } from '@trpc/server';
 import { runComplianceChecks, CHECK_DEFINITIONS } from '../../lib/compliance/engine.js';
 
