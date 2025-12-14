@@ -2,15 +2,18 @@ FROM node:24-alpine
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files first for better caching
 COPY package*.json ./
 COPY prisma ./prisma/
 
 # Install all dependencies (including dev for build)
 RUN npm ci
 
-# Copy source code (cache bust on every change)
+# Copy all source code
 COPY . .
+
+# Force rebuild - update this timestamp to bust cache: 2025-12-14T12:50
+ARG CACHEBUST=1
 
 # Build (includes tsc-alias to resolve path aliases)
 RUN npm run build
