@@ -157,28 +157,24 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
       },
     });
 
-    // If not found by email, try to find by any associated Microsoft connection
+    // If not found, auto-create the user on first login
     if (!dbUser) {
-      console.log('[Azure AD] User not found by email, checking Microsoft connections');
-      const connection = await db.microsoftConnection.findFirst({
-        where: {
-          OR: [
-            { tenantId: process.env.MICROSOFT_TENANT_ID },
-          ]
+      console.log('[Azure AD] User not found, creating new user:', azureAdUser.email);
+      dbUser = await db.user.create({
+        data: {
+          auth0Id: azureAdUser.id, // Use Azure AD oid as auth0Id
+          email: azureAdUser.email,
+          name: azureAdUser.email.split('@')[0], // Use email prefix as name
+          role: 'viewer', // Default role
         },
-        include: { user: true },
-      });
-      if (connection?.user) {
-        dbUser = await db.user.findUnique({
-          where: { id: connection.user.id },
-          include: {
-            microsoftConnections: {
-              where: { isActive: true },
-              take: 1,
-            },
+        include: {
+          microsoftConnections: {
+            where: { isActive: true },
+            take: 1,
           },
-        });
-      }
+        },
+      });
+      console.log('[Azure AD] New user created:', dbUser.id);
     }
 
     if (dbUser) {

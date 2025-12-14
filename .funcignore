@@ -1,0 +1,16 @@
+# Ignore for Azure Functions deployment (pre-built)
+.git
+.github
+.vscode
+.idea
+*.md
+*.log
+.env*
+local.settings.json
+.gitignore
+coverage/
+src/
+tsconfig.json
+*.ts
+!*.d.ts
+deploy.zip

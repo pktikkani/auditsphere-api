@@ -83,3 +83,75 @@ app.http('health', {
     };
   },
 });
+
+// Debug endpoint - test database connection
+app.http('debug', {
+  methods: ['GET'],
+  authLevel: 'anonymous',
+  route: 'debug',
+  handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    try {
+      const { db } = await import('../lib/db/prisma.js');
+      const userCount = await db.user.count();
+      return {
+        jsonBody: { status: 'ok', database: 'connected', users: userCount },
+      };
+    } catch (error) {
+      return {
+        status: 500,
+        jsonBody: {
+          status: 'error',
+          message: error instanceof Error ? error.message : 'Unknown',
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+      };
+    }
+  },
+});
+
+// Auth debug endpoint - test token validation
+app.http('auth-debug', {
+  methods: ['GET', 'POST', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'auth-debug',
+  handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    const jwt = await import('jsonwebtoken');
+
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return {
+        jsonBody: {
+          error: 'No Bearer token',
+          headers: Object.fromEntries(request.headers.entries()),
+        },
+      };
+    }
+
+    const token = authHeader.substring(7);
+
+    try {
+      // Decode without verification to see claims
+      const decoded = jwt.default.decode(token, { complete: true });
+
+      return {
+        jsonBody: {
+          status: 'token_received',
+          header: decoded?.header,
+          payload: decoded?.payload,
+          envConfig: {
+            MICROSOFT_TENANT_ID: process.env.MICROSOFT_TENANT_ID,
+            MICROSOFT_CLIENT_ID: process.env.MICROSOFT_CLIENT_ID,
+          },
+        },
+      };
+    } catch (error) {
+      return {
+        status: 500,
+        jsonBody: {
+          status: 'decode_error',
+          message: error instanceof Error ? error.message : 'Unknown',
+        },
+      };
+    }
+  },
+});
