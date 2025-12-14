@@ -26,7 +26,7 @@ async function validateAzureAdToken(token: string): Promise<{ id: string; email:
   try {
     // Decode token header to get kid
     const decoded = jwt.decode(token, { complete: true });
-    if (!decoded || typeof decoded === 'string' || !decoded.header.kid) {
+    if (!decoded || !decoded.header.kid) {
       return null;
     }
 
