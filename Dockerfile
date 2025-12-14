@@ -9,7 +9,7 @@ COPY prisma ./prisma/
 # Install all dependencies (including dev for build)
 RUN npm ci
 
-# Copy source code
+# Copy source code (cache bust on every change)
 COPY . .
 
 # Build (includes tsc-alias to resolve path aliases)
@@ -17,6 +17,9 @@ RUN npm run build
 
 # Remove dev dependencies
 RUN npm prune --production
+
+# Regenerate prisma client for production
+RUN npx prisma generate
 
 # Expose port
 EXPOSE 3000
