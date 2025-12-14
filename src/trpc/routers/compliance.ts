@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '../init.js';
 import { db } from '../../lib/db/prisma.js';
 import { TRPCError } from '@trpc/server';
+import { runComplianceChecks, CHECK_DEFINITIONS } from '../../lib/compliance/engine.js';
 
 const runComplianceSchema = z.object({
   standardId: z.enum(['CIS-MS365', 'CUSTOM', 'ALL']).optional(),
@@ -11,7 +12,6 @@ const runComplianceSchema = z.object({
 export const complianceRouter = createTRPCRouter({
   /**
    * Run compliance checks
-   * Note: Actual compliance checking logic should be implemented separately
    */
   run: protectedProcedure
     .input(runComplianceSchema)
@@ -23,17 +23,34 @@ export const complianceRouter = createTRPCRouter({
         });
       }
 
+      // Check for Microsoft connection
+      const connection = await db.microsoftConnection.findFirst({
+        where: { userId: ctx.user.id, isActive: true },
+      });
+
+      if (!connection) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'No active Microsoft 365 connection. Please connect your tenant first.',
+        });
+      }
+
+      const standardId = input.standardId || 'CIS-MS365';
+
       // Create a compliance run record
       const run = await db.complianceRun.create({
         data: {
-          standardId: input.standardId || 'CIS-MS365',
+          standardId,
           triggeredBy: 'manual',
           status: 'running',
         },
       });
 
-      // Note: Actual compliance checks would be run here
-      // For now, return the run ID for tracking
+      // Run compliance checks asynchronously (don't await)
+      runComplianceChecks(ctx.user.id, run.id, standardId, input.siteUrls).catch((error) => {
+        console.error('[Compliance] Background run failed:', error);
+      });
+
       return {
         success: true,
         runId: run.id,
@@ -136,33 +153,14 @@ export const complianceRouter = createTRPCRouter({
    * Get compliance check definitions
    */
   checkDefinitions: protectedProcedure.query(async () => {
-    // Return static check definitions
-    return [
-      {
-        code: 'EXT-001',
-        name: 'External Sharing Disabled',
-        description: 'Verify external sharing is disabled for sensitive sites',
-        category: 'Sharing',
-        severity: 'HIGH' as const,
-        standardId: 'CIS-MS365',
-      },
-      {
-        code: 'EXT-002',
-        name: 'Anonymous Links Disabled',
-        description: 'Verify anonymous sharing links are disabled',
-        category: 'Sharing',
-        severity: 'HIGH' as const,
-        standardId: 'CIS-MS365',
-      },
-      {
-        code: 'ACC-001',
-        name: 'Guest Access Review',
-        description: 'Review guest user access to sites',
-        category: 'Access',
-        severity: 'MEDIUM' as const,
-        standardId: 'CIS-MS365',
-      },
-    ];
+    return CHECK_DEFINITIONS.map((def) => ({
+      code: def.code,
+      name: def.name,
+      description: def.description,
+      category: def.category,
+      severity: def.severity,
+      standardId: def.standardId,
+    }));
   }),
 
   /**
