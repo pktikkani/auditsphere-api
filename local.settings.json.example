@@ -1,0 +1,16 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "DATABASE_URL": "postgresql://user:password@host:5432/database",
+    "MICROSOFT_TENANT_ID": "your-tenant-id",
+    "MICROSOFT_CLIENT_ID": "your-client-id",
+    "MICROSOFT_CLIENT_SECRET": "your-client-secret",
+    "ENCRYPTION_KEY": "generate-with-openssl-rand-base64-32"
+  },
+  "Host": {
+    "CORS": "*",
+    "CORSCredentials": false
+  }
+}

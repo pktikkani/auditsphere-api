@@ -1,0 +1,472 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// User & Organization
+// ============================================================================
+
+model User {
+  id       String  @id @default(cuid())
+  auth0Id  String  @unique
+  email    String  @unique
+  name     String?
+  picture  String?
+  role     String  @default("viewer") // admin, analyst, viewer
+
+  // Microsoft connection
+  microsoftConnections MicrosoftConnection[]
+  appCredentials       AppCredentials?
+
+  // User activity
+  alerts           Alert[]
+  reports          Report[]
+  scheduledReports ScheduledReport[]
+  alertConfigs     AlertConfig[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([auth0Id])
+  @@map("users")
+}
+
+model MicrosoftConnection {
+  id         String @id @default(cuid())
+  userId     String
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId   String
+  tenantName String?
+
+  // Encrypted tokens
+  accessToken  String   @db.Text
+  refreshToken String   @db.Text
+  tokenExpiresAt DateTime // When the access token expires
+
+  // Scopes granted
+  scopes String[]
+
+  // Connection status
+  isActive   Boolean   @default(true)
+  status     String    @default("active") // active, expired, revoked
+  lastSyncAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, tenantId])
+  @@index([userId])
+  @@index([status])
+  @@index([isActive])
+  @@map("microsoft_connections")
+}
+
+// User-specific Microsoft App Credentials (alternative to .env)
+model AppCredentials {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Microsoft Entra ID app registration
+  tenantId     String  @db.Text // Encrypted
+  clientId     String  @db.Text // Encrypted
+  clientSecret String  @db.Text // Encrypted
+
+  // Whether to use these credentials instead of .env
+  useCustomCredentials Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("app_credentials")
+}
+
+// ============================================================================
+// Audit Events
+// ============================================================================
+
+model AuditEvent {
+  id String @id @default(cuid())
+
+  // O365 Management API fields
+  eventId      String   @unique // Original event ID from O365
+  tenantId     String? // Organization/Tenant ID
+  recordType   Int // SharePoint activity type
+  creationTime DateTime
+  operation    String // e.g., FileAccessed, FileModified
+  workload     String? // SharePoint, OneDrive, etc.
+
+  // User info
+  userId   String?
+  userKey  String?
+  userType Int? // 0=regular, 1=guest, 2=admin, 3=system
+
+  // Object/Resource
+  objectId          String? // File/Site URL
+  itemType          String? // File, Folder, Site
+  listId            String?
+  listItemId        String?
+  siteUrl           String?
+  sourceFileName    String?
+  sourceRelativeUrl String?
+
+  // Access details
+  clientIp  String?
+  userAgent String?
+
+  // Sharing specific
+  targetUserOrGroup String?
+  sharingType       String?
+
+  // Full event payload
+  rawEvent Json
+
+  // Anomaly detection
+  anomalies Anomaly[]
+
+  createdAt DateTime @default(now())
+
+  @@index([creationTime])
+  @@index([operation])
+  @@index([userId])
+  @@index([siteUrl])
+  @@index([tenantId])
+  @@index([userType])
+  @@map("audit_events")
+}
+
+// ============================================================================
+// Compliance
+// ============================================================================
+
+model ComplianceCheck {
+  id String @id @default(cuid())
+
+  // Check definition
+  standardId       String // e.g., "CIS-MS365", "NIST", "CUSTOM"
+  checkCode        String // e.g., "EXT-001"
+  name             String
+  description      String  @db.Text
+  category         String // Sharing, Access, Data Protection
+  severity         String // critical, high, medium, low
+
+  // Check results
+  status           String  @default("pending") // pending, passed, failed, error
+  resultDetails    Json?
+  remediationSteps String? @db.Text
+
+  // Target
+  targetType String // global, site, list
+  targetId   String? // Site ID or null for global
+
+  // Execution
+  executedAt      DateTime?
+  executionTimeMs Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([standardId, checkCode, targetId])
+  @@index([standardId])
+  @@index([status])
+  @@index([category])
+  @@index([severity])
+  @@map("compliance_checks")
+}
+
+model ComplianceRun {
+  id String @id @default(cuid())
+
+  standardId  String
+  triggeredBy String // scheduled, manual, webhook
+
+  // Results summary
+  totalChecks  Int @default(0)
+  passedChecks Int @default(0)
+  failedChecks Int @default(0)
+  errorChecks  Int @default(0)
+
+  // Execution
+  status       String    @default("running") // running, completed, failed
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+  errorMessage String?
+
+  results Json? // Detailed results array
+
+  @@index([standardId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("compliance_runs")
+}
+
+// ============================================================================
+// Anomalies
+// ============================================================================
+
+model Anomaly {
+  id String @id @default(cuid())
+
+  // Associated audit event
+  auditEventId String
+  auditEvent   AuditEvent @relation(fields: [auditEventId], references: [id], onDelete: Cascade)
+
+  // Detection info
+  anomalyType  String // access_pattern, timing, volume, external_sharing
+  severity     String // CRITICAL, HIGH, MEDIUM, LOW
+  confidence   Float // 0-1 confidence score
+  anomalyScore Float // 0-1 normalized score
+
+  // ML output
+  featuresUsed Json // Feature values used for detection
+
+  // Status
+  status     String    @default("NEW") // NEW, INVESTIGATING, RESOLVED, FALSE_POSITIVE
+  resolvedAt DateTime?
+  resolvedBy String?
+  resolution String?
+
+  // Related alerts
+  alerts Alert[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([anomalyType])
+  @@index([severity])
+  @@index([status])
+  @@index([createdAt])
+  @@index([auditEventId])
+  @@map("anomalies")
+}
+
+// ============================================================================
+// Alerts
+// ============================================================================
+
+model Alert {
+  id String @id @default(cuid())
+
+  // Alert type and details
+  type        String // ANOMALY, COMPLIANCE, SECURITY
+  severity    String // CRITICAL, HIGH, MEDIUM, LOW
+  title       String
+  description String @db.Text
+
+  // Metadata
+  metadata Json?
+
+  // Status
+  status         String    @default("NEW") // NEW, ACKNOWLEDGED, RESOLVED, DISMISSED
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
+  resolvedAt     DateTime?
+  resolvedBy     String?
+
+  // Relations
+  anomalyId String?
+  anomaly   Anomaly? @relation(fields: [anomalyId], references: [id])
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+
+  // Notification tracking
+  notificationsSent Json? // Track which channels were notified
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([severity])
+  @@index([type])
+  @@index([createdAt])
+  @@map("alerts")
+}
+
+model AlertConfig {
+  id          String  @id @default(cuid())
+  userId      String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  enabled     Boolean @default(true)
+
+  // Conditions
+  conditionType String // anomaly, compliance_failure, event_pattern
+  conditions    Json // Condition configuration
+
+  // Thresholds
+  severityFilter String[] // Which severities to alert on
+
+  // Notification channels
+  emailEnabled Boolean @default(true)
+  slackEnabled Boolean @default(false)
+  slackWebhook String?
+  teamsEnabled Boolean @default(false)
+  teamsWebhook String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([enabled])
+  @@map("alert_configs")
+}
+
+// ============================================================================
+// Reports
+// ============================================================================
+
+model Report {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name String
+  type String // access_audit, compliance, anomaly, sharing
+
+  // Report parameters
+  parameters Json // Date range, filters, etc.
+
+  // Output
+  status   String  @default("pending") // pending, generating, completed, error
+  format   String  @default("pdf") // pdf, xlsx, csv
+  fileUrl  String? // Blob URL
+  fileSize Int?
+
+  generatedAt  DateTime?
+  expiresAt    DateTime?
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@map("reports")
+}
+
+model ScheduledReport {
+  id         String @id @default(cuid())
+  userId     String
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  type       String
+  parameters Json
+  format     String @default("pdf")
+
+  // Schedule
+  cronExpression String // Cron expression
+  timezone       String  @default("UTC")
+  enabled        Boolean @default(true)
+
+  // Delivery
+  emailRecipients String[]
+
+  // Tracking
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([enabled])
+  @@index([nextRunAt])
+  @@map("scheduled_reports")
+}
+
+// ============================================================================
+// SharePoint Sites Cache
+// ============================================================================
+
+model SharePointSite {
+  id String @id @default(cuid())
+
+  // Graph API fields
+  graphId        String  @unique // Site ID from Graph
+  displayName    String
+  webUrl         String
+  siteCollection String?
+
+  // Configuration
+  externalSharingEnabled Boolean?
+  sharingCapability      String?
+  sensitivityLabel       String?
+
+  // Cached permissions
+  permissionsCache    Json?
+  permissionsCachedAt DateTime?
+
+  // Monitoring config
+  monitoringEnabled      Boolean @default(true)
+  complianceCheckEnabled Boolean @default(true)
+
+  lastSyncAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([displayName])
+  @@index([monitoringEnabled])
+  @@map("sharepoint_sites")
+}
+
+// ============================================================================
+// Webhook Subscriptions
+// ============================================================================
+
+model WebhookSubscription {
+  id String @id @default(cuid())
+
+  // O365 subscription info
+  subscriptionId String @unique
+  contentType    String // Audit.SharePoint
+  webhook        String // Our webhook URL
+
+  // Status
+  status         String   @default("active") // active, expired, disabled
+  expirationTime DateTime
+
+  // Error tracking
+  lastError  String?
+  errorCount Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([expirationTime])
+  @@map("webhook_subscriptions")
+}
+
+// ============================================================================
+// Webhook Logs (for debugging)
+// ============================================================================
+
+model WebhookLog {
+  id String @id @default(cuid())
+
+  source      String // o365, graph, etc.
+  contentType String?
+  contentUri  String?
+  tenantId    String?
+
+  // Payload
+  payload Json
+
+  // Processing status
+  processedAt DateTime?
+  error       String?
+
+  createdAt DateTime @default(now())
+
+  @@index([source])
+  @@index([contentType])
+  @@index([processedAt])
+  @@index([createdAt])
+  @@map("webhook_logs")
+}
