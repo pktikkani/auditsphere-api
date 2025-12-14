@@ -8,6 +8,7 @@ import { dashboardRouter } from './dashboard.js';
 import { microsoftRouter } from './microsoft.js';
 import { sitesRouter } from './sites.js';
 import { settingsRouter } from './settings.js';
+import { userRouter } from './user.js';
 
 /**
  * Root tRPC Router
@@ -29,8 +30,9 @@ export const appRouter = createTRPCRouter({
   // Microsoft/Azure integration
   microsoft: microsoftRouter,
 
-  // User settings
+  // User settings and profile
   settings: settingsRouter,
+  user: userRouter,
 });
 
 /**
