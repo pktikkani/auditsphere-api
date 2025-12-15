@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '../init.js';
 import { db } from '../../lib/db/prisma.js';
 import { PermissionsClient, ResourcePermission } from '../../lib/microsoft/permissions.js';
+import { EmailClient } from '../../lib/microsoft/email.js';
 import { TRPCError } from '@trpc/server';
 import type { Prisma } from '@prisma/client';
 
@@ -1299,12 +1300,34 @@ export const accessReviewRouter = createTRPCRouter({
         }),
       ]);
 
-      // TODO: Integrate with email service (SendGrid, SES, etc.)
-      // For now, log the email that would be sent
-      console.log(`[SendCampaignReport] Would send report for campaign "${campaign.name}" to:`, input.recipientEmails);
-      console.log(`[SendCampaignReport] Stats: ${totalItems} items, ${retainCount} retained, ${removeCount} removed`);
+      const pending = totalItems - retainCount - removeCount;
 
-      // Create notifications for the recipients
+      // Send email via Microsoft Graph API
+      const emailClient = new EmailClient(ctx.user.id);
+      const dashboardUrl = `${process.env.DASHBOARD_URL || 'https://pragmatic706.sharepoint.com'}/SitePages/AccessReview.aspx`;
+
+      const result = await emailClient.sendAccessReviewReport(
+        ctx.user.email, // Send from the user's email
+        input.recipientEmails,
+        campaign.name,
+        {
+          total: totalItems,
+          retained: retainCount,
+          removed: removeCount,
+          pending,
+        },
+        dashboardUrl
+      );
+
+      if (!result.success) {
+        console.error(`[SendCampaignReport] Failed to send email:`, result.error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: result.error || 'Failed to send email',
+        });
+      }
+
+      // Create notifications for tracking
       for (const email of input.recipientEmails) {
         await db.accessReviewNotification.create({
           data: {
@@ -1319,7 +1342,7 @@ export const accessReviewRouter = createTRPCRouter({
 
       return {
         success: true,
-        message: `Report queued for ${input.recipientEmails.length} recipient(s)`,
+        message: `Report sent to ${input.recipientEmails.length} recipient(s)`,
         recipientCount: input.recipientEmails.length,
       };
     }),
