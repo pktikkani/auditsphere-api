@@ -420,6 +420,15 @@ func azure functionapp publish <your-function-app-name>
 | `npm run db:push` | Push schema to database |
 | `npm run db:studio` | Open Prisma Studio |
 
+## Documentation
+
+Detailed documentation is available in the `/docs` folder:
+
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture, tRPC, Zod validation, auth flow |
+| [API_REFERENCE.md](docs/API_REFERENCE.md) | Complete tRPC endpoint reference with examples |
+
 ## Related Projects
 
 - [AuditSphere](https://github.com/your-org/auditsphere) - Main web application
