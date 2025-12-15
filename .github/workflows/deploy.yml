@@ -5,9 +5,11 @@ on:
     branches:
       - main
       - railway-version
+      - access-review
   pull_request:
     branches:
       - main
+      - access-review
 
 env:
   NODE_VERSION: '20.x'

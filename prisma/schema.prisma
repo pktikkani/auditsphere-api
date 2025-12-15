@@ -123,6 +123,9 @@ model AccessReviewCampaign {
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
 
+  // If created from a schedule
+  scheduledReviewId String?
+
   items         AccessReviewItem[]
   notifications AccessReviewNotification[]
 
@@ -133,6 +136,7 @@ model AccessReviewCampaign {
   @@index([status])
   @@index([createdById])
   @@index([dueDate])
+  @@index([scheduledReviewId])
   @@map("access_review_campaigns")
 }
 
@@ -208,46 +212,59 @@ model AccessReviewDecision {
 model DesignatedOwner {
   id String @id @default(cuid())
 
+  // Who created this
+  userId String
+
   // Resource matching
-  resourceType    String // site, drive, folder, path_pattern
-  resourcePattern String @db.Text // URL or pattern
+  siteUrl String @db.Text // Site URL this owner is designated for
 
   // Owner info
   ownerEmail String
   ownerName  String?
+  ownerType  String  @default("primary") // primary, backup, delegate
+
+  // Notes and status
+  notes    String? @db.Text
+  isActive Boolean @default(true)
 
   // Options
-  isPrimarySiteOwner Boolean @default(false) // Use SharePoint site owner
-  notifyOnReview     Boolean @default(true)
+  notifyOnReview Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([resourceType, resourcePattern])
+  @@unique([userId, siteUrl, ownerEmail])
+  @@index([userId])
+  @@index([siteUrl])
   @@index([ownerEmail])
+  @@index([isActive])
   @@map("designated_owners")
 }
 
 model AccessReviewNotification {
-  id         String               @id @default(cuid())
-  campaignId String
-  campaign   AccessReviewCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+
+  // Optional campaign link
+  campaignId String?
+  campaign   AccessReviewCampaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   // Notification details
-  type      String // campaign_started, reminder, completed, action_required
-  recipient String
-  subject   String
-  body      String @db.Text
+  type    String // campaign_started, campaign_due_soon, campaign_overdue, review_assigned, execution_complete, schedule_triggered
+  title   String
+  message String @db.Text
 
   // Status
-  sentAt DateTime?
+  readAt DateTime?
+  sentAt DateTime? // For email notifications
   error  String?
 
   createdAt DateTime @default(now())
 
+  @@index([userId])
   @@index([campaignId])
   @@index([type])
-  @@index([sentAt])
+  @@index([readAt])
   @@map("access_review_notifications")
 }
 

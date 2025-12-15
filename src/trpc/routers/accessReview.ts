@@ -107,12 +107,62 @@ export const accessReviewRouter = createTRPCRouter({
       return campaign;
     }),
 
+  updateCampaign: protectedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().optional(),
+        description: z.string().optional(),
+        scope: scopeSchema.optional(),
+        dueDate: z.string().nullable().optional(),
+        recurrence: z.string().nullable().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+
+      const campaign = await db.accessReviewCampaign.update({
+        where: { id },
+        data: {
+          ...(data.name && { name: data.name }),
+          ...(data.description !== undefined && { description: data.description || null }),
+          ...(data.scope && { scope: data.scope as Prisma.InputJsonValue }),
+          ...(data.dueDate !== undefined && { dueDate: data.dueDate ? new Date(data.dueDate) : null }),
+          ...(data.recurrence !== undefined && { recurrence: data.recurrence }),
+        },
+      });
+
+      return campaign;
+    }),
+
   deleteCampaign: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input }) => {
       await db.accessReviewCampaign.delete({
         where: { id: input.id },
       });
+      return { success: true };
+    }),
+
+  completeCampaign: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      const campaign = await db.accessReviewCampaign.findUnique({
+        where: { id: input.id },
+      });
+
+      if (!campaign) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Campaign not found' });
+      }
+
+      await db.accessReviewCampaign.update({
+        where: { id: input.id },
+        data: {
+          status: 'completed',
+          completedAt: new Date(),
+        },
+      });
+
       return { success: true };
     }),
 
@@ -715,6 +765,505 @@ export const accessReviewRouter = createTRPCRouter({
         where: { id: input.id },
       });
       return { success: true };
+    }),
+
+  runSchedule: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const schedule = await db.scheduledReview.findUnique({
+        where: { id: input.id },
+      });
+
+      if (!schedule) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Schedule not found' });
+      }
+
+      // Create a new campaign from the schedule
+      const campaign = await db.accessReviewCampaign.create({
+        data: {
+          name: `${schedule.name} - ${new Date().toLocaleDateString()}`,
+          description: `Auto-generated from schedule: ${schedule.name}`,
+          scope: schedule.scope as Prisma.InputJsonValue,
+          status: 'draft',
+          dueDate: new Date(Date.now() + schedule.reviewPeriodDays * 24 * 60 * 60 * 1000),
+          createdById: ctx.user.id,
+          scheduledReviewId: schedule.id,
+        },
+      });
+
+      // Update schedule last run
+      const nextRunAt = calculateNextRun(
+        schedule.frequency,
+        schedule.dayOfWeek ?? undefined,
+        schedule.dayOfMonth ?? undefined,
+        schedule.time
+      );
+
+      await db.scheduledReview.update({
+        where: { id: input.id },
+        data: {
+          lastRunAt: new Date(),
+          nextRunAt,
+        },
+      });
+
+      return { campaign };
+    }),
+
+  // ==================== Designated Owners ====================
+
+  listDesignatedOwners: protectedProcedure
+    .input(
+      z.object({
+        siteUrl: z.string().optional(),
+        page: z.number().default(1),
+        limit: z.number().default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { siteUrl, page, limit } = input;
+      const skip = (page - 1) * limit;
+
+      const where = {
+        userId: ctx.user.id,
+        ...(siteUrl ? { siteUrl } : {}),
+      };
+
+      const [owners, total] = await Promise.all([
+        db.designatedOwner.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        db.designatedOwner.count({ where }),
+      ]);
+
+      return {
+        owners,
+        pagination: {
+          total,
+          page,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    }),
+
+  getDesignatedOwner: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input }) => {
+      const owner = await db.designatedOwner.findUnique({
+        where: { id: input.id },
+      });
+
+      if (!owner) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Designated owner not found' });
+      }
+
+      return owner;
+    }),
+
+  createDesignatedOwner: protectedProcedure
+    .input(
+      z.object({
+        siteUrl: z.string(),
+        ownerEmail: z.string().email(),
+        ownerName: z.string().optional(),
+        ownerType: z.enum(['primary', 'backup', 'delegate']).default('primary'),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const owner = await db.designatedOwner.create({
+        data: {
+          userId: ctx.user.id,
+          siteUrl: input.siteUrl,
+          ownerEmail: input.ownerEmail,
+          ownerName: input.ownerName || null,
+          ownerType: input.ownerType,
+          notes: input.notes || null,
+        },
+      });
+
+      return owner;
+    }),
+
+  updateDesignatedOwner: protectedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        ownerEmail: z.string().email().optional(),
+        ownerName: z.string().optional(),
+        ownerType: z.enum(['primary', 'backup', 'delegate']).optional(),
+        notes: z.string().optional(),
+        isActive: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+
+      const owner = await db.designatedOwner.update({
+        where: { id },
+        data: {
+          ...(data.ownerEmail && { ownerEmail: data.ownerEmail }),
+          ...(data.ownerName !== undefined && { ownerName: data.ownerName || null }),
+          ...(data.ownerType && { ownerType: data.ownerType }),
+          ...(data.notes !== undefined && { notes: data.notes || null }),
+          ...(data.isActive !== undefined && { isActive: data.isActive }),
+        },
+      });
+
+      return owner;
+    }),
+
+  deleteDesignatedOwner: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      await db.designatedOwner.delete({
+        where: { id: input.id },
+      });
+      return { success: true };
+    }),
+
+  getOwnersForSite: protectedProcedure
+    .input(z.object({ siteUrl: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const owners = await db.designatedOwner.findMany({
+        where: {
+          userId: ctx.user.id,
+          siteUrl: input.siteUrl,
+          isActive: true,
+        },
+        orderBy: [
+          { ownerType: 'asc' }, // primary first
+          { createdAt: 'asc' },
+        ],
+      });
+
+      return owners;
+    }),
+
+  // ==================== Notifications ====================
+
+  listNotifications: protectedProcedure
+    .input(
+      z.object({
+        unreadOnly: z.boolean().default(false),
+        campaignId: z.string().optional(),
+        page: z.number().default(1),
+        limit: z.number().default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { unreadOnly, campaignId, page, limit } = input;
+      const skip = (page - 1) * limit;
+
+      const where = {
+        userId: ctx.user.id,
+        ...(unreadOnly ? { readAt: null } : {}),
+        ...(campaignId ? { campaignId } : {}),
+      };
+
+      const [notifications, total, unreadCount] = await Promise.all([
+        db.accessReviewNotification.findMany({
+          where,
+          include: {
+            campaign: {
+              select: { id: true, name: true, status: true },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        db.accessReviewNotification.count({ where }),
+        db.accessReviewNotification.count({
+          where: { userId: ctx.user.id, readAt: null },
+        }),
+      ]);
+
+      return {
+        notifications,
+        unreadCount,
+        pagination: {
+          total,
+          page,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    }),
+
+  createNotification: protectedProcedure
+    .input(
+      z.object({
+        type: z.enum(['campaign_started', 'campaign_due_soon', 'campaign_overdue', 'review_assigned', 'execution_complete', 'schedule_triggered']),
+        title: z.string(),
+        message: z.string(),
+        campaignId: z.string().optional(),
+        recipientEmail: z.string().email().optional(),
+        sendEmail: z.boolean().default(false),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const notification = await db.accessReviewNotification.create({
+        data: {
+          userId: ctx.user.id,
+          type: input.type,
+          title: input.title,
+          message: input.message,
+          campaignId: input.campaignId || null,
+        },
+      });
+
+      // If sendEmail is true and we have a recipient, queue email
+      if (input.sendEmail && input.recipientEmail) {
+        // TODO: Integrate with email service (SendGrid, SES, etc.)
+        console.log(`[Notification] Would send email to ${input.recipientEmail}: ${input.title}`);
+      }
+
+      return notification;
+    }),
+
+  markNotificationRead: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      const notification = await db.accessReviewNotification.update({
+        where: { id: input.id },
+        data: { readAt: new Date() },
+      });
+
+      return notification;
+    }),
+
+  markAllNotificationsRead: protectedProcedure.mutation(async ({ ctx }) => {
+    await db.accessReviewNotification.updateMany({
+      where: {
+        userId: ctx.user.id,
+        readAt: null,
+      },
+      data: { readAt: new Date() },
+    });
+
+    return { success: true };
+  }),
+
+  deleteNotification: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      await db.accessReviewNotification.delete({
+        where: { id: input.id },
+      });
+      return { success: true };
+    }),
+
+  // ==================== Review Item Details ====================
+
+  getItem: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input }) => {
+      const item = await db.accessReviewItem.findUnique({
+        where: { id: input.id },
+        include: {
+          campaign: {
+            select: { id: true, name: true, status: true },
+          },
+          decision: {
+            include: {
+              reviewer: {
+                select: { id: true, name: true, email: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (!item) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Item not found' });
+      }
+
+      return item;
+    }),
+
+  // ==================== Bulk Operations ====================
+
+  bulkRetainAll: protectedProcedure
+    .input(z.object({ campaignId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      // Get all items without decisions
+      const items = await db.accessReviewItem.findMany({
+        where: {
+          campaignId: input.campaignId,
+          decision: null,
+        },
+        select: { id: true },
+      });
+
+      let success = 0;
+      for (const item of items) {
+        try {
+          await db.accessReviewDecision.create({
+            data: {
+              itemId: item.id,
+              decision: 'retain',
+              decidedAt: new Date(),
+              reviewerId: ctx.user.id,
+              reviewerEmail: ctx.user.email,
+            },
+          });
+          success++;
+        } catch {
+          // Skip if decision already exists
+        }
+      }
+
+      // Update campaign counts
+      const [retainCount, removeCount] = await Promise.all([
+        db.accessReviewDecision.count({
+          where: {
+            item: { campaignId: input.campaignId },
+            decision: 'retain',
+          },
+        }),
+        db.accessReviewDecision.count({
+          where: {
+            item: { campaignId: input.campaignId },
+            decision: 'remove',
+          },
+        }),
+      ]);
+
+      await db.accessReviewCampaign.update({
+        where: { id: input.campaignId },
+        data: {
+          reviewedItems: retainCount + removeCount,
+          retainedItems: retainCount,
+          removedItems: removeCount,
+        },
+      });
+
+      return { success, total: items.length };
+    }),
+
+  // ==================== Reports ====================
+
+  getCampaignReport: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input }) => {
+      const campaign = await db.accessReviewCampaign.findUnique({
+        where: { id: input.id },
+        include: {
+          createdBy: {
+            select: { id: true, name: true, email: true },
+          },
+          items: {
+            include: {
+              decision: {
+                include: {
+                  reviewer: {
+                    select: { name: true, email: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!campaign) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Campaign not found' });
+      }
+
+      // Generate summary
+      const itemsByResourceType: Record<string, number> = {};
+      const itemsByGranteeType: Record<string, number> = {};
+      const decisionsByReviewer: Record<string, { retain: number; remove: number }> = {};
+
+      let retainCount = 0;
+      let removeCount = 0;
+      let pendingCount = 0;
+      let executedCount = 0;
+      let failedCount = 0;
+
+      for (const item of campaign.items) {
+        // Count by resource type
+        itemsByResourceType[item.resourceType] = (itemsByResourceType[item.resourceType] || 0) + 1;
+
+        // Count by grantee type
+        const granteeType = item.grantedToType || 'unknown';
+        itemsByGranteeType[granteeType] = (itemsByGranteeType[granteeType] || 0) + 1;
+
+        // Count decisions
+        if (item.decision) {
+          const reviewer = item.decision.reviewer?.email || 'unknown';
+          if (!decisionsByReviewer[reviewer]) {
+            decisionsByReviewer[reviewer] = { retain: 0, remove: 0 };
+          }
+
+          if (item.decision.decision === 'retain') {
+            retainCount++;
+            decisionsByReviewer[reviewer].retain++;
+          } else if (item.decision.decision === 'remove') {
+            removeCount++;
+            decisionsByReviewer[reviewer].remove++;
+
+            if (item.decision.executionStatus === 'completed') {
+              executedCount++;
+            } else if (item.decision.executionStatus === 'failed') {
+              failedCount++;
+            }
+          }
+        } else {
+          pendingCount++;
+        }
+      }
+
+      return {
+        campaign: {
+          id: campaign.id,
+          name: campaign.name,
+          description: campaign.description,
+          status: campaign.status,
+          createdAt: campaign.createdAt,
+          startDate: campaign.startDate,
+          completedAt: campaign.completedAt,
+          dueDate: campaign.dueDate,
+          createdBy: campaign.createdBy,
+        },
+        summary: {
+          totalItems: campaign.items.length,
+          retainCount,
+          removeCount,
+          pendingCount,
+          executedCount,
+          failedCount,
+          reviewProgress: campaign.items.length > 0
+            ? Math.round(((retainCount + removeCount) / campaign.items.length) * 100)
+            : 0,
+        },
+        breakdown: {
+          byResourceType: Object.entries(itemsByResourceType).map(([type, count]) => ({ type, count })),
+          byGranteeType: Object.entries(itemsByGranteeType).map(([type, count]) => ({ type, count })),
+          byReviewer: Object.entries(decisionsByReviewer).map(([email, counts]) => ({
+            email,
+            retain: counts.retain,
+            remove: counts.remove,
+            total: counts.retain + counts.remove,
+          })),
+        },
+        items: campaign.items.map(item => ({
+          id: item.id,
+          resourceType: item.resourceType,
+          resourceName: item.resourceName,
+          resourcePath: item.resourcePath,
+          grantedTo: item.grantedTo,
+          grantedToType: item.grantedToType,
+          accessLevel: item.accessLevel,
+          decision: item.decision?.decision || null,
+          decidedAt: item.decision?.decidedAt || null,
+          reviewer: item.decision?.reviewer?.email || null,
+          executionStatus: item.decision?.executionStatus || null,
+        })),
+      };
     }),
 });
 

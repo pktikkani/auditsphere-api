@@ -6,6 +6,7 @@ import { createTRPCContext } from './trpc/init.js';
 import { microsoftRouter } from './routes/microsoft.js';
 import { db } from './lib/db/prisma.js';
 import jwt from 'jsonwebtoken';
+import { startAccessReviewScheduler } from './jobs/access-review-scheduler.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -132,6 +133,9 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
   console.log(`📍 tRPC endpoint: http://localhost:${PORT}/api/trpc/*`);
+
+  // Start the Access Review scheduler
+  startAccessReviewScheduler();
 });
 
 export default app;
