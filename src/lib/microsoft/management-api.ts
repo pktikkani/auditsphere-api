@@ -1,51 +1,23 @@
+import { z } from 'zod';
 import { TokenManager } from './token-manager.js';
 import { db } from '../db/prisma.js';
+import {
+  ManagementSubscription,
+  ManagementSubscriptionSchema,
+  ManagementSubscriptionsResponseSchema,
+  ManagementContentBlob,
+  ManagementContentListResponseSchema,
+  ManagementSharePointAuditEvent,
+  ManagementAuditEventsResponseSchema,
+  parseManagementResponse,
+} from './management-api-schemas.js';
 
 const MANAGEMENT_BASE_URL = 'https://manage.office.com/api/v1.0';
 
-export interface AuditEvent {
-  Id: string;
-  RecordType: number;
-  CreationTime: string;
-  Operation: string;
-  OrganizationId: string;
-  UserType: number;
-  UserKey: string;
-  Workload: string;
-  UserId: string;
-  ClientIP?: string;
-  UserAgent?: string;
-  ObjectId?: string;
-  ItemType?: string;
-  ListId?: string;
-  ListItemId?: string;
-  SiteUrl?: string;
-  SourceFileName?: string;
-  TargetUserOrGroupName?: string;
-  TargetUserOrGroupType?: string;
-  SharingType?: string;
-  EventSource?: string;
-  SourceFileExtension?: string;
-}
-
-export interface ContentBlob {
-  contentType: string;
-  contentId: string;
-  contentUri: string;
-  contentCreated: string;
-  contentExpiration: string;
-}
-
-export interface Subscription {
-  contentType: string;
-  status: string;
-  webhook?: {
-    status: string;
-    address: string;
-    authId?: string;
-    expiration?: string;
-  };
-}
+// Re-export types for backward compatibility
+export type AuditEvent = ManagementSharePointAuditEvent;
+export type ContentBlob = ManagementContentBlob;
+export type Subscription = ManagementSubscription;
 
 export class ManagementApiClient {
   private tokenManager: TokenManager;
@@ -58,6 +30,8 @@ export class ManagementApiClient {
 
   private async request<T>(
     endpoint: string,
+    schema: z.ZodType<T>,
+    context: string,
     options: RequestInit = {}
   ): Promise<T> {
     // Use Management API-specific token (client credentials flow)
@@ -86,7 +60,8 @@ export class ManagementApiClient {
       return {} as T;
     }
 
-    return JSON.parse(text);
+    const data = JSON.parse(text);
+    return parseManagementResponse(schema, data, context);
   }
 
   /**
@@ -108,6 +83,8 @@ export class ManagementApiClient {
 
     return this.request<Subscription>(
       '/subscriptions/start?contentType=Audit.SharePoint',
+      ManagementSubscriptionSchema,
+      'Start Subscription',
       {
         method: 'POST',
         body: body ? JSON.stringify(body) : undefined,
@@ -119,8 +96,12 @@ export class ManagementApiClient {
    * Stop a subscription
    */
   async stopSubscription(): Promise<void> {
-    await this.request<void>(
+    // Stop subscription returns empty response, use a simple schema
+    const emptySchema = z.object({}).passthrough();
+    await this.request(
       '/subscriptions/stop?contentType=Audit.SharePoint',
+      emptySchema,
+      'Stop Subscription',
       { method: 'POST' }
     );
   }
@@ -129,7 +110,11 @@ export class ManagementApiClient {
    * List current subscriptions
    */
   async listSubscriptions(): Promise<Subscription[]> {
-    return this.request<Subscription[]>('/subscriptions/list');
+    return this.request<Subscription[]>(
+      '/subscriptions/list',
+      ManagementSubscriptionsResponseSchema,
+      'List Subscriptions'
+    );
   }
 
   /**
@@ -145,7 +130,11 @@ export class ManagementApiClient {
       query += `&startTime=${startTime.toISOString()}&endTime=${endTime.toISOString()}`;
     }
 
-    return this.request<ContentBlob[]>(`/subscriptions/content${query}`);
+    return this.request<ContentBlob[]>(
+      `/subscriptions/content${query}`,
+      ManagementContentListResponseSchema,
+      'List Content'
+    );
   }
 
   /**
@@ -165,7 +154,12 @@ export class ManagementApiClient {
       throw new Error(`Failed to fetch content: ${response.status} - ${error}`);
     }
 
-    return await response.json() as AuditEvent[];
+    const data = await response.json();
+    return parseManagementResponse(
+      ManagementAuditEventsResponseSchema,
+      data,
+      'Fetch Content'
+    );
   }
 
   /**

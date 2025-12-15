@@ -4,6 +4,7 @@ import { db } from '../../lib/db/prisma.js';
 import { PermissionsClient, ResourcePermission } from '../../lib/microsoft/permissions.js';
 import { EmailClient } from '../../lib/microsoft/email.js';
 import { generateAccessReviewPdf } from '../../lib/access-review/pdf-report.js';
+import { runScheduler, checkDueSchedules, checkReminders, checkOverdueCampaigns } from '../../jobs/access-review-scheduler.js';
 import { TRPCError } from '@trpc/server';
 import type { Prisma } from '@prisma/client';
 
@@ -1388,6 +1389,42 @@ export const accessReviewRouter = createTRPCRouter({
         message: `Report sent to ${input.recipientEmails.length} recipient(s)`,
         recipientCount: input.recipientEmails.length,
       };
+    }),
+
+  // ==================== Scheduler ====================
+
+  triggerScheduler: protectedProcedure
+    .input(
+      z.object({
+        action: z.enum(['all', 'due_schedules', 'reminders', 'overdue']).default('all'),
+      }).optional()
+    )
+    .mutation(async ({ input }) => {
+      const action = input?.action || 'all';
+
+      try {
+        switch (action) {
+          case 'due_schedules':
+            await checkDueSchedules();
+            return { success: true, message: 'Due schedules check completed' };
+          case 'reminders':
+            await checkReminders();
+            return { success: true, message: 'Reminders check completed' };
+          case 'overdue':
+            await checkOverdueCampaigns();
+            return { success: true, message: 'Overdue campaigns check completed' };
+          case 'all':
+          default:
+            await runScheduler();
+            return { success: true, message: 'Full scheduler run completed' };
+        }
+      } catch (error) {
+        console.error('[TriggerScheduler] Error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Scheduler execution failed',
+        });
+      }
     }),
 });
 
