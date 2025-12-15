@@ -129,4 +129,86 @@ export const microsoftRouter = createTRPCRouter({
       tenantName: connection.tenantName,
     };
   }),
+
+  /**
+   * Get drives (document libraries) for a site
+   */
+  drives: protectedProcedure
+    .input(z.object({ siteId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'User not found' });
+      }
+
+      try {
+        const permissionsClient = new PermissionsClient(ctx.user.id);
+        const drives = await permissionsClient.getSiteDrives(input.siteId);
+
+        return drives.map(drive => ({
+          id: drive.id,
+          name: drive.name,
+          webUrl: drive.webUrl,
+          driveType: drive.driveType,
+        }));
+      } catch (error) {
+        console.error('Error fetching drives:', error);
+        return [];
+      }
+    }),
+
+  /**
+   * Get folder contents (children)
+   */
+  folderContents: protectedProcedure
+    .input(z.object({
+      driveId: z.string(),
+      folderId: z.string().default('root'),
+    }))
+    .query(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'User not found' });
+      }
+
+      try {
+        const permissionsClient = new PermissionsClient(ctx.user.id);
+        const items = await permissionsClient.listDriveItemChildren(input.driveId, input.folderId);
+
+        return items.map(item => ({
+          id: item.id,
+          name: item.name,
+          webUrl: item.webUrl,
+          isFolder: !!item.folder,
+          childCount: item.folder?.childCount || 0,
+          mimeType: item.file?.mimeType || null,
+        }));
+      } catch (error) {
+        console.error('Error fetching folder contents:', error);
+        return [];
+      }
+    }),
+
+  /**
+   * Get site details by ID
+   */
+  site: protectedProcedure
+    .input(z.object({ siteId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'User not found' });
+      }
+
+      try {
+        const permissionsClient = new PermissionsClient(ctx.user.id);
+        const site = await permissionsClient.getSiteById(input.siteId);
+
+        return {
+          id: site.id,
+          displayName: site.displayName,
+          webUrl: site.webUrl,
+        };
+      } catch (error) {
+        console.error('Error fetching site:', error);
+        return null;
+      }
+    }),
 });
