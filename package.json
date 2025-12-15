@@ -5,7 +5,9 @@
   "type": "module",
   "main": "dist/src/server.js",
   "scripts": {
+    "postinstall": "prisma generate",
     "build": "prisma generate && tsc && tsc-alias",
+    "build:railway": "prisma generate && tsc && tsc-alias && prisma db push",
     "watch": "tsc -w",
     "clean": "rimraf dist",
     "start": "node dist/src/server.js",
