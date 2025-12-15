@@ -1,11 +1,9 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import cron from 'node-cron';
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 import { appRouter } from './trpc/routers/_app.js';
 import { createTRPCContext } from './trpc/init.js';
 import { microsoftRouter } from './routes/microsoft.js';
-import { scheduledSync, scheduledAnomalyDetection } from './jobs/scheduled.js';
 import { db } from './lib/db/prisma.js';
 import jwt from 'jsonwebtoken';
 
@@ -126,25 +124,6 @@ app.all('/api/trpc/*path', async (req: Request, res: Response) => {
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
-  }
-});
-
-// Cron jobs (run every 15 minutes)
-cron.schedule('*/15 * * * *', async () => {
-  console.log('[Cron] Running scheduled sync...');
-  try {
-    await scheduledSync();
-  } catch (error) {
-    console.error('[Cron] Scheduled sync failed:', error);
-  }
-});
-
-cron.schedule('*/15 * * * *', async () => {
-  console.log('[Cron] Running anomaly detection...');
-  try {
-    await scheduledAnomalyDetection();
-  } catch (error) {
-    console.error('[Cron] Anomaly detection failed:', error);
   }
 });
 

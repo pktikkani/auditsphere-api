@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '../init.js';
-import { db } from '@/lib/db/prisma.js';
+import { db } from '../../lib/db/prisma.js';
 import { TRPCError } from '@trpc/server';
+import { PermissionsClient } from '../../lib/microsoft/permissions.js';
 
 export const microsoftRouter = createTRPCRouter({
   /**
@@ -34,22 +35,32 @@ export const microsoftRouter = createTRPCRouter({
   }),
 
   /**
-   * Get SharePoint sites
+   * Get SharePoint sites from Microsoft Graph
    */
-  sites: protectedProcedure.query(async () => {
-    const sites = await db.sharePointSite.findMany({
-      orderBy: { displayName: 'asc' },
-      select: {
-        id: true,
-        graphId: true,
-        displayName: true,
-        webUrl: true,
-        siteCollection: true,
-        createdAt: true,
-      },
-    });
+  sites: protectedProcedure.query(async ({ ctx }) => {
+    if (!ctx.user) {
+      throw new TRPCError({
+        code: 'UNAUTHORIZED',
+        message: 'User not found',
+      });
+    }
 
-    return sites;
+    try {
+      const permissionsClient = new PermissionsClient(ctx.user.id);
+      const sites = await permissionsClient.getAllSites();
+
+      return sites.map(site => ({
+        id: site.id,
+        graphId: site.id,
+        displayName: site.displayName,
+        name: site.name,
+        webUrl: site.webUrl,
+        siteCollection: site.siteCollection?.hostname || null,
+      }));
+    } catch (error) {
+      console.error('Error fetching sites:', error);
+      return [];
+    }
   }),
 
   /**

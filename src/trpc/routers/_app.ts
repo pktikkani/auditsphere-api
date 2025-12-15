@@ -1,33 +1,19 @@
 import { createTRPCRouter } from '../init.js';
-import { anomaliesRouter } from './anomalies.js';
-import { auditEventsRouter } from './auditEvents.js';
-import { complianceRouter } from './compliance.js';
-import { alertsRouter } from './alerts.js';
-import { reportsRouter } from './reports.js';
-import { dashboardRouter } from './dashboard.js';
+import { accessReviewRouter } from './accessReview.js';
 import { microsoftRouter } from './microsoft.js';
-import { sitesRouter } from './sites.js';
-import { settingsRouter } from './settings.js';
 import { userRouter } from './user.js';
+import { settingsRouter } from './settings.js';
 
 /**
- * Root tRPC Router
+ * Root tRPC Router - Access Review Only
  *
  * All routers added here will be available at /api/trpc/*
  */
 export const appRouter = createTRPCRouter({
-  // Core feature routers
-  anomalies: anomaliesRouter,
-  auditEvents: auditEventsRouter,
-  compliance: complianceRouter,
-  alerts: alertsRouter,
-  reports: reportsRouter,
-  sites: sitesRouter,
+  // Access Review
+  accessReview: accessReviewRouter,
 
-  // Dashboard and overview
-  dashboard: dashboardRouter,
-
-  // Microsoft/Azure integration
+  // Microsoft/Azure integration (required for OAuth)
   microsoft: microsoftRouter,
 
   // User settings and profile

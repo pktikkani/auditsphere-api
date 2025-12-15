@@ -23,11 +23,10 @@ model User {
   microsoftConnections MicrosoftConnection[]
   appCredentials       AppCredentials?
 
-  // User activity
-  alerts           Alert[]
-  reports          Report[]
-  scheduledReports ScheduledReport[]
-  alertConfigs     AlertConfig[]
+  // Access Review
+  accessReviewCampaigns AccessReviewCampaign[]
+  reviewedDecisions     AccessReviewDecision[]
+  scheduledReviews      ScheduledReview[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -45,8 +44,8 @@ model MicrosoftConnection {
   tenantName String?
 
   // Encrypted tokens
-  accessToken  String   @db.Text
-  refreshToken String   @db.Text
+  accessToken    String   @db.Text
+  refreshToken   String   @db.Text
   tokenExpiresAt DateTime // When the access token expires
 
   // Scopes granted
@@ -74,9 +73,9 @@ model AppCredentials {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Microsoft Entra ID app registration
-  tenantId     String  @db.Text // Encrypted
-  clientId     String  @db.Text // Encrypted
-  clientSecret String  @db.Text // Encrypted
+  tenantId     String @db.Text // Encrypted
+  clientId     String @db.Text // Encrypted
+  clientSecret String @db.Text // Encrypted
 
   // Whether to use these credentials instead of .env
   useCustomCredentials Boolean @default(true)
@@ -88,386 +87,211 @@ model AppCredentials {
 }
 
 // ============================================================================
-// Audit Events
+// Access Review
 // ============================================================================
 
-model AuditEvent {
-  id String @id @default(cuid())
-
-  // O365 Management API fields
-  eventId      String   @unique // Original event ID from O365
-  tenantId     String? // Organization/Tenant ID
-  recordType   Int // SharePoint activity type
-  creationTime DateTime
-  operation    String // e.g., FileAccessed, FileModified
-  workload     String? // SharePoint, OneDrive, etc.
-
-  // User info
-  userId   String?
-  userKey  String?
-  userType Int? // 0=regular, 1=guest, 2=admin, 3=system
-
-  // Object/Resource
-  objectId          String? // File/Site URL
-  itemType          String? // File, Folder, Site
-  listId            String?
-  listItemId        String?
-  siteUrl           String?
-  sourceFileName    String?
-  sourceRelativeUrl String?
-
-  // Access details
-  clientIp  String?
-  userAgent String?
-
-  // Sharing specific
-  targetUserOrGroup String?
-  sharingType       String?
-
-  // Full event payload
-  rawEvent Json
-
-  // Anomaly detection
-  anomalies Anomaly[]
-
-  createdAt DateTime @default(now())
-
-  @@index([creationTime])
-  @@index([operation])
-  @@index([userId])
-  @@index([siteUrl])
-  @@index([tenantId])
-  @@index([userType])
-  @@map("audit_events")
-}
-
-// ============================================================================
-// Compliance
-// ============================================================================
-
-model ComplianceCheck {
-  id String @id @default(cuid())
-
-  // Check definition
-  standardId       String // e.g., "CIS-MS365", "NIST", "CUSTOM"
-  checkCode        String // e.g., "EXT-001"
-  name             String
-  description      String  @db.Text
-  category         String // Sharing, Access, Data Protection
-  severity         String // critical, high, medium, low
-
-  // Check results
-  status           String  @default("pending") // pending, passed, failed, error
-  resultDetails    Json?
-  remediationSteps String? @db.Text
-
-  // Target
-  targetType String // global, site, list
-  targetId   String? // Site ID or null for global
-
-  // Execution
-  executedAt      DateTime?
-  executionTimeMs Int?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([standardId, checkCode, targetId])
-  @@index([standardId])
-  @@index([status])
-  @@index([category])
-  @@index([severity])
-  @@map("compliance_checks")
-}
-
-model ComplianceRun {
-  id String @id @default(cuid())
-
-  standardId  String
-  triggeredBy String // scheduled, manual, webhook
-
-  // Results summary
-  totalChecks  Int @default(0)
-  passedChecks Int @default(0)
-  failedChecks Int @default(0)
-  errorChecks  Int @default(0)
-
-  // Execution
-  status       String    @default("running") // running, completed, failed
-  startedAt    DateTime  @default(now())
-  completedAt  DateTime?
-  errorMessage String?
-
-  results Json? // Detailed results array
-
-  @@index([standardId])
-  @@index([status])
-  @@index([startedAt])
-  @@map("compliance_runs")
-}
-
-// ============================================================================
-// Anomalies
-// ============================================================================
-
-model Anomaly {
-  id String @id @default(cuid())
-
-  // Associated audit event
-  auditEventId String
-  auditEvent   AuditEvent @relation(fields: [auditEventId], references: [id], onDelete: Cascade)
-
-  // Detection info
-  anomalyType  String // access_pattern, timing, volume, external_sharing
-  severity     String // CRITICAL, HIGH, MEDIUM, LOW
-  confidence   Float // 0-1 confidence score
-  anomalyScore Float // 0-1 normalized score
-
-  // ML output
-  featuresUsed Json // Feature values used for detection
-
-  // Status
-  status     String    @default("NEW") // NEW, INVESTIGATING, RESOLVED, FALSE_POSITIVE
-  resolvedAt DateTime?
-  resolvedBy String?
-  resolution String?
-
-  // Related alerts
-  alerts Alert[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([anomalyType])
-  @@index([severity])
-  @@index([status])
-  @@index([createdAt])
-  @@index([auditEventId])
-  @@map("anomalies")
-}
-
-// ============================================================================
-// Alerts
-// ============================================================================
-
-model Alert {
-  id String @id @default(cuid())
-
-  // Alert type and details
-  type        String // ANOMALY, COMPLIANCE, SECURITY
-  severity    String // CRITICAL, HIGH, MEDIUM, LOW
-  title       String
-  description String @db.Text
-
-  // Metadata
-  metadata Json?
-
-  // Status
-  status         String    @default("NEW") // NEW, ACKNOWLEDGED, RESOLVED, DISMISSED
-  acknowledgedAt DateTime?
-  acknowledgedBy String?
-  resolvedAt     DateTime?
-  resolvedBy     String?
-
-  // Relations
-  anomalyId String?
-  anomaly   Anomaly? @relation(fields: [anomalyId], references: [id])
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id])
-
-  // Notification tracking
-  notificationsSent Json? // Track which channels were notified
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([status])
-  @@index([severity])
-  @@index([type])
-  @@index([createdAt])
-  @@map("alerts")
-}
-
-model AlertConfig {
+model AccessReviewCampaign {
   id          String  @id @default(cuid())
-  userId      String
-  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   name        String
-  description String?
-  enabled     Boolean @default(true)
+  description String? @db.Text
 
-  // Conditions
-  conditionType String // anomaly, compliance_failure, event_pattern
-  conditions    Json // Condition configuration
-
-  // Thresholds
-  severityFilter String[] // Which severities to alert on
-
-  // Notification channels
-  emailEnabled Boolean @default(true)
-  slackEnabled Boolean @default(false)
-  slackWebhook String?
-  teamsEnabled Boolean @default(false)
-  teamsWebhook String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@index([enabled])
-  @@map("alert_configs")
-}
-
-// ============================================================================
-// Reports
-// ============================================================================
-
-model Report {
-  id     String @id @default(cuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  name String
-  type String // access_audit, compliance, anomaly, sharing
-
-  // Report parameters
-  parameters Json // Date range, filters, etc.
-
-  // Output
-  status   String  @default("pending") // pending, generating, completed, error
-  format   String  @default("pdf") // pdf, xlsx, csv
-  fileUrl  String? // Blob URL
-  fileSize Int?
-
-  generatedAt  DateTime?
-  expiresAt    DateTime?
-  errorMessage String?
-
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-  @@index([type])
-  @@index([status])
-  @@map("reports")
-}
-
-model ScheduledReport {
-  id         String @id @default(cuid())
-  userId     String
-  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name       String
-  type       String
-  parameters Json
-  format     String @default("pdf")
+  // Scope configuration
+  scope Json // { siteUrls: string[], includeDrives: boolean, includeSubfolders: boolean }
 
   // Schedule
-  cronExpression String // Cron expression
-  timezone       String  @default("UTC")
-  enabled        Boolean @default(true)
+  recurrence     String? // once, weekly, monthly, quarterly
+  cronExpression String?
+  timezone       String   @default("UTC")
+  startDate      DateTime?
+  dueDate        DateTime?
 
-  // Delivery
-  emailRecipients String[]
+  // Notifications
+  reminderDays           Int      @default(3)
+  notifyAdminsOnComplete Boolean  @default(true)
+  adminEmails            String[]
 
-  // Tracking
-  lastRunAt DateTime?
-  nextRunAt DateTime?
+  // Status tracking
+  status String @default("draft") // draft, scheduled, collecting, in_review, completed, cancelled
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // Progress
+  totalItems    Int @default(0)
+  reviewedItems Int @default(0)
+  retainedItems Int @default(0)
+  removedItems  Int @default(0)
 
-  @@index([userId])
-  @@index([enabled])
-  @@index([nextRunAt])
-  @@map("scheduled_reports")
-}
+  // Relations
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
 
-// ============================================================================
-// SharePoint Sites Cache
-// ============================================================================
+  items         AccessReviewItem[]
+  notifications AccessReviewNotification[]
 
-model SharePointSite {
-  id String @id @default(cuid())
-
-  // Graph API fields
-  graphId        String  @unique // Site ID from Graph
-  displayName    String
-  webUrl         String
-  siteCollection String?
-
-  // Configuration
-  externalSharingEnabled Boolean?
-  sharingCapability      String?
-  sensitivityLabel       String?
-
-  // Cached permissions
-  permissionsCache    Json?
-  permissionsCachedAt DateTime?
-
-  // Monitoring config
-  monitoringEnabled      Boolean @default(true)
-  complianceCheckEnabled Boolean @default(true)
-
-  lastSyncAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-
-  @@index([displayName])
-  @@index([monitoringEnabled])
-  @@map("sharepoint_sites")
-}
-
-// ============================================================================
-// Webhook Subscriptions
-// ============================================================================
-
-model WebhookSubscription {
-  id String @id @default(cuid())
-
-  // O365 subscription info
-  subscriptionId String @unique
-  contentType    String // Audit.SharePoint
-  webhook        String // Our webhook URL
-
-  // Status
-  status         String   @default("active") // active, expired, disabled
-  expirationTime DateTime
-
-  // Error tracking
-  lastError  String?
-  errorCount Int     @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
 
   @@index([status])
-  @@index([expirationTime])
-  @@map("webhook_subscriptions")
+  @@index([createdById])
+  @@index([dueDate])
+  @@map("access_review_campaigns")
 }
 
-// ============================================================================
-// Webhook Logs (for debugging)
-// ============================================================================
+model AccessReviewItem {
+  id         String               @id @default(cuid())
+  campaignId String
+  campaign   AccessReviewCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
-model WebhookLog {
+  // Resource info
+  resourceType String // site, drive, folder, file
+  resourceId   String // Graph ID
+  resourceName String
+  resourcePath String  @db.Text
+  siteUrl      String?
+
+  // Permission info
+  permissionId     String
+  permissionType   String // user, group, shareLink, application
+  grantedTo        String? // Display name or email
+  grantedToId      String?
+  grantedToType    String? // user, group, application
+  accessLevel      String // read, write, owner
+  permissionOrigin String? // direct, inherited
+  sharingLinkType  String? // anonymous, organization, users
+  expiresAt        DateTime?
+
+  // Assigned reviewer
+  assignedReviewerEmail String?
+  assignedReviewerName  String?
+
+  // Decision
+  decision AccessReviewDecision?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([campaignId, permissionId, resourceId])
+  @@index([campaignId])
+  @@index([assignedReviewerEmail])
+  @@index([grantedToType])
+  @@map("access_review_items")
+}
+
+model AccessReviewDecision {
+  id     String           @id @default(cuid())
+  itemId String           @unique
+  item   AccessReviewItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  // Decision
+  decision      String // pending, retain, remove
+  justification String? @db.Text
+  decidedAt     DateTime?
+
+  // Reviewer
+  reviewerId    String?
+  reviewer      User?   @relation(fields: [reviewerId], references: [id])
+  reviewerEmail String?
+
+  // Execution
+  executionStatus String   @default("pending") // pending, in_progress, completed, failed
+  executedAt      DateTime?
+  executionError  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([decision])
+  @@index([reviewerId])
+  @@index([executionStatus])
+  @@map("access_review_decisions")
+}
+
+model DesignatedOwner {
   id String @id @default(cuid())
 
-  source      String // o365, graph, etc.
-  contentType String?
-  contentUri  String?
-  tenantId    String?
+  // Resource matching
+  resourceType    String // site, drive, folder, path_pattern
+  resourcePattern String @db.Text // URL or pattern
 
-  // Payload
-  payload Json
+  // Owner info
+  ownerEmail String
+  ownerName  String?
 
-  // Processing status
-  processedAt DateTime?
-  error       String?
+  // Options
+  isPrimarySiteOwner Boolean @default(false) // Use SharePoint site owner
+  notifyOnReview     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([resourceType, resourcePattern])
+  @@index([ownerEmail])
+  @@map("designated_owners")
+}
+
+model AccessReviewNotification {
+  id         String               @id @default(cuid())
+  campaignId String
+  campaign   AccessReviewCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  // Notification details
+  type      String // campaign_started, reminder, completed, action_required
+  recipient String
+  subject   String
+  body      String @db.Text
+
+  // Status
+  sentAt DateTime?
+  error  String?
 
   createdAt DateTime @default(now())
 
-  @@index([source])
-  @@index([contentType])
-  @@index([processedAt])
-  @@index([createdAt])
-  @@map("webhook_logs")
+  @@index([campaignId])
+  @@index([type])
+  @@index([sentAt])
+  @@map("access_review_notifications")
+}
+
+model ScheduledReview {
+  id          String  @id @default(cuid())
+  name        String
+  description String? @db.Text
+  enabled     Boolean @default(true)
+
+  // Scope - which sites/resources to review
+  scope Json // { siteUrls: string[], includeDrives: boolean, includeSubfolders: boolean, maxDepth: number }
+
+  // Schedule
+  frequency   String // weekly, monthly, quarterly, yearly
+  dayOfWeek   Int? // 0-6 for weekly (0=Sunday)
+  dayOfMonth  Int? // 1-31 for monthly
+  monthOfYear Int? // 1-12 for yearly
+  time        String @default("09:00") // HH:mm format
+  timezone    String @default("UTC")
+
+  // Review settings
+  reviewPeriodDays Int     @default(14) // Days to complete review
+  reminderDays     Int[]   @default([7, 3, 1]) // Days before due to send reminders
+  autoExecute      Boolean @default(false) // Auto-execute removals after due date
+
+  // Notifications
+  notifyAdmins       Boolean  @default(true)
+  adminEmails        String[]
+  sendReportToOwners Boolean  @default(true) // Email PDF report to owners
+
+  // Tracking
+  lastRunAt      DateTime?
+  nextRunAt      DateTime?
+  lastCampaignId String?
+
+  // Relations
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([enabled])
+  @@index([nextRunAt])
+  @@index([createdById])
+  @@map("scheduled_reviews")
 }
