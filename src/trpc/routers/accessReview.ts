@@ -3,6 +3,7 @@ import { createTRPCRouter, protectedProcedure } from '../init.js';
 import { db } from '../../lib/db/prisma.js';
 import { PermissionsClient, ResourcePermission } from '../../lib/microsoft/permissions.js';
 import { EmailClient } from '../../lib/microsoft/email.js';
+import { generateAccessReviewPdf } from '../../lib/access-review/pdf-report.js';
 import { TRPCError } from '@trpc/server';
 import type { Prisma } from '@prisma/client';
 
@@ -1289,8 +1290,8 @@ export const accessReviewRouter = createTRPCRouter({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Campaign not found' });
       }
 
-      // Get campaign stats
-      const [totalItems, retainCount, removeCount] = await Promise.all([
+      // Get campaign stats and items for PDF
+      const [totalItems, retainCount, removeCount, items] = await Promise.all([
         db.accessReviewItem.count({ where: { campaignId: input.campaignId } }),
         db.accessReviewDecision.count({
           where: { item: { campaignId: input.campaignId }, decision: 'retain' },
@@ -1298,9 +1299,49 @@ export const accessReviewRouter = createTRPCRouter({
         db.accessReviewDecision.count({
           where: { item: { campaignId: input.campaignId }, decision: 'remove' },
         }),
+        db.accessReviewItem.findMany({
+          where: { campaignId: input.campaignId },
+          include: {
+            decision: {
+              select: { decision: true, justification: true },
+            },
+          },
+          take: 100, // Limit items for PDF
+        }),
       ]);
 
       const pending = totalItems - retainCount - removeCount;
+
+      // Generate PDF report
+      let pdfBuffer: Buffer | undefined;
+      try {
+        pdfBuffer = await generateAccessReviewPdf({
+          campaignName: campaign.name,
+          campaignDescription: campaign.description,
+          status: campaign.status,
+          dueDate: campaign.dueDate,
+          completedAt: campaign.completedAt,
+          createdAt: campaign.createdAt,
+          items: items.map(item => ({
+            resourceName: item.resourceName,
+            resourcePath: item.resourcePath,
+            grantedTo: item.grantedTo,
+            accessLevel: item.accessLevel,
+            decision: item.decision,
+          })),
+          summary: {
+            total: totalItems,
+            retained: retainCount,
+            removed: removeCount,
+            pending,
+          },
+          generatedAt: new Date(),
+          generatedBy: ctx.user.email,
+        });
+      } catch (pdfError) {
+        console.error('[SendCampaignReport] PDF generation failed:', pdfError);
+        // Continue without PDF if generation fails
+      }
 
       // Send email via Microsoft Graph API
       const emailClient = new EmailClient(ctx.user.id);
@@ -1317,7 +1358,8 @@ export const accessReviewRouter = createTRPCRouter({
           removed: removeCount,
           pending,
         },
-        dashboardUrl
+        dashboardUrl,
+        pdfBuffer
       );
 
       if (!result.success) {

@@ -94,7 +94,7 @@ export class EmailClient {
   }
 
   /**
-   * Send access review report email
+   * Send access review report email with optional PDF attachment
    */
   async sendAccessReviewReport(
     fromEmail: string,
@@ -106,15 +106,25 @@ export class EmailClient {
       removed: number;
       pending: number;
     },
-    dashboardUrl: string
+    dashboardUrl: string,
+    pdfBuffer?: Buffer
   ): Promise<{ success: boolean; error?: string }> {
     const htmlBody = this.generateAccessReviewEmailHtml(campaignName, summary, dashboardUrl);
+
+    const attachments = pdfBuffer ? [
+      {
+        name: `Access_Review_Report_${campaignName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
+        contentType: 'application/pdf',
+        contentBytes: pdfBuffer.toString('base64'),
+      },
+    ] : undefined;
 
     return this.sendEmail(fromEmail, {
       to: toEmails,
       subject: `Access Review Report: ${campaignName}`,
       body: htmlBody,
       bodyType: 'html',
+      attachments,
     });
   }
 
