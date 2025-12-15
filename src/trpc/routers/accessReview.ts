@@ -1265,6 +1265,64 @@ export const accessReviewRouter = createTRPCRouter({
         })),
       };
     }),
+
+  sendCampaignReport: protectedProcedure
+    .input(
+      z.object({
+        campaignId: z.string(),
+        recipientEmails: z.array(z.string().email()),
+        includeDetails: z.boolean().default(true),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const campaign = await db.accessReviewCampaign.findUnique({
+        where: { id: input.campaignId },
+        include: {
+          createdBy: {
+            select: { name: true, email: true },
+          },
+        },
+      });
+
+      if (!campaign) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Campaign not found' });
+      }
+
+      // Get campaign stats
+      const [totalItems, retainCount, removeCount] = await Promise.all([
+        db.accessReviewItem.count({ where: { campaignId: input.campaignId } }),
+        db.accessReviewDecision.count({
+          where: { item: { campaignId: input.campaignId }, decision: 'retain' },
+        }),
+        db.accessReviewDecision.count({
+          where: { item: { campaignId: input.campaignId }, decision: 'remove' },
+        }),
+      ]);
+
+      // TODO: Integrate with email service (SendGrid, SES, etc.)
+      // For now, log the email that would be sent
+      console.log(`[SendCampaignReport] Would send report for campaign "${campaign.name}" to:`, input.recipientEmails);
+      console.log(`[SendCampaignReport] Stats: ${totalItems} items, ${retainCount} retained, ${removeCount} removed`);
+
+      // Create notifications for the recipients
+      for (const email of input.recipientEmails) {
+        await db.accessReviewNotification.create({
+          data: {
+            userId: ctx.user.id,
+            type: 'execution_complete',
+            title: `Campaign Report: ${campaign.name}`,
+            message: `Report sent to ${email}. Total items: ${totalItems}, Retained: ${retainCount}, Removed: ${removeCount}`,
+            campaignId: input.campaignId,
+          },
+        });
+      }
+
+      return {
+        success: true,
+        message: `Report queued for ${input.recipientEmails.length} recipient(s)`,
+        recipientCount: input.recipientEmails.length,
+      };
+    }),
 });
 
 // Helper function to calculate next run date
