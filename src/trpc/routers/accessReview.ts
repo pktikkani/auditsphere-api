@@ -1304,7 +1304,8 @@ export const accessReviewRouter = createTRPCRouter({
 
       // Send email via Microsoft Graph API
       const emailClient = new EmailClient(ctx.user.id);
-      const dashboardUrl = `${process.env.DASHBOARD_URL || 'https://pragmatic706.sharepoint.com'}/SitePages/AccessReview.aspx`;
+      const baseUrl = process.env.DASHBOARD_URL || 'https://pragmatic706.sharepoint.com/sites/Sample3/SitePages/CollabHome.aspx';
+      const dashboardUrl = `${baseUrl}?campaignId=${input.campaignId}`;
 
       const result = await emailClient.sendAccessReviewReport(
         ctx.user.email, // Send from the user's email
