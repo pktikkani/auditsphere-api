@@ -267,6 +267,53 @@ chmod +x trigger-scheduler.sh
 ./trigger-scheduler.sh reminders # Only check reminders
 ```
 
+## Microsoft API Schema Validation
+
+External Microsoft API responses are validated at runtime using Zod schemas to ensure type safety at the boundary between this application and Microsoft services.
+
+### Microsoft Graph API
+
+Schemas for SharePoint permissions, sites, drives, and email operations.
+
+| Schema | Description |
+|--------|-------------|
+| `GraphPermissionSchema` | Drive item and site permissions |
+| `GraphDriveItemSchema` | Files and folders in OneDrive/SharePoint |
+| `GraphDriveSchema` | Document libraries and drives |
+| `GraphSiteSchema` | SharePoint sites and site collections |
+| `GraphIdentitySetSchema` | User/group/app identities |
+| `GraphSharingLinkSchema` | Anonymous and organizational sharing links |
+| `GraphSendMailRequestSchema` | Email message structure |
+
+**File:** `src/lib/microsoft/graph-schemas.ts`
+
+### Office 365 Management Activity API
+
+Schemas for audit log subscriptions and events.
+
+| Schema | Description |
+|--------|-------------|
+| `ManagementSubscriptionSchema` | Audit log subscriptions with webhook config |
+| `ManagementContentBlobSchema` | Content blob references for fetching events |
+| `ManagementSharePointAuditEventSchema` | SharePoint audit events (file access, sharing, etc.) |
+
+**File:** `src/lib/microsoft/management-api-schemas.ts`
+
+### Usage
+
+```typescript
+import { parseGraphResponse, GraphPermissionSchema } from './graph-schemas.js';
+import { parseManagementResponse, ManagementAuditEventsResponseSchema } from './management-api-schemas.js';
+
+// Validate Graph API response
+const permissions = parseGraphResponse(GraphPermissionSchema, apiResponse, 'Get Permissions');
+
+// Validate Management API response
+const events = parseManagementResponse(ManagementAuditEventsResponseSchema, apiResponse, 'Fetch Events');
+```
+
+In development mode, validation failures throw errors. In production, failures are logged and the raw data is returned to avoid breaking changes from Microsoft API updates.
+
 ## Project Structure
 
 ```
@@ -295,9 +342,12 @@ auditsphere-api/
 │       ├── db/
 │       │   └── prisma.ts        # Database client
 │       ├── microsoft/
-│       │   ├── email.ts         # Microsoft Graph email client
-│       │   ├── permissions.ts   # SharePoint permissions client
-│       │   └── token-manager.ts # OAuth token management
+│       │   ├── email.ts                  # Microsoft Graph email client
+│       │   ├── graph-schemas.ts          # Zod schemas for Graph API
+│       │   ├── management-api.ts         # Office 365 Management API client
+│       │   ├── management-api-schemas.ts # Zod schemas for Management API
+│       │   ├── permissions.ts            # SharePoint permissions client
+│       │   └── token-manager.ts          # OAuth token management
 │       └── access-review/
 │           └── pdf-report.tsx   # PDF report generation
 ├── prisma/
