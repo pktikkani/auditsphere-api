@@ -1,17 +1,16 @@
-openapi: 3.2.0
-jsonSchemaDialect: "https://json-schema.org/draft/2020-12/schema"
+openapi: 3.1.0
 info:
-  title: AuditSphere API (Access-Review Branch)
-  summary: SharePoint security monitoring with Access Review capabilities
+  title: AuditSphere API (Access Review Module)
+  summary: SharePoint permission access review and certification
   description: |
-    tRPC-based API for AuditSphere SPFX integration with Access Review capabilities.
+    tRPC-based API for AuditSphere Access Review module.
     All endpoints require Azure AD authentication via Bearer token.
 
     Base URL: `/api/trpc`
 
     tRPC endpoints follow the pattern: `POST /api/trpc/{router}.{procedure}`
 
-    This branch includes all main branch APIs plus the Access Review module.
+    This spec contains only the Access Review module APIs.
   version: 1.1.0
   contact:
     name: AuditSphere Team
