@@ -1,6 +1,8 @@
-openapi: 3.0.3
+openapi: 3.2.0
+jsonSchemaDialect: "https://json-schema.org/draft/2020-12/schema"
 info:
   title: AuditSphere API (Main Branch)
+  summary: SharePoint security monitoring and compliance API
   description: |
     tRPC-based API for AuditSphere SPFX integration.
     All endpoints require Azure AD authentication via Bearer token.
@@ -11,6 +13,9 @@ info:
   version: 1.0.0
   contact:
     name: AuditSphere Team
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
 
 servers:
   - url: /api/trpc
@@ -1303,23 +1308,52 @@ paths:
                 $ref: '#/components/schemas/User'
 
 tags:
+  # Security Monitoring (parent category)
+  - name: Security
+    description: Security monitoring and threat detection
+    kind: namespace
   - name: Alerts
     description: Security alert management
+    parent: Security
   - name: Anomalies
     description: Anomaly detection and management
+    parent: Security
+
+  # Audit & Compliance (parent category)
+  - name: Audit & Compliance
+    description: Audit trails and compliance management
+    kind: namespace
   - name: Audit Events
     description: SharePoint audit event tracking
+    parent: Audit & Compliance
   - name: Compliance
     description: Compliance checks and reporting
-  - name: Dashboard
-    description: Dashboard overview and statistics
-  - name: Microsoft
-    description: Microsoft 365 connection management
+    parent: Audit & Compliance
   - name: Reports
     description: Report generation and management
+    parent: Audit & Compliance
+
+  # Microsoft Integration (parent category)
+  - name: Microsoft Integration
+    description: Microsoft 365 and SharePoint integration
+    kind: namespace
+  - name: Microsoft
+    description: Microsoft 365 connection management
+    parent: Microsoft Integration
   - name: Sites
     description: SharePoint site management
+    parent: Microsoft Integration
+
+  # Application (parent category)
+  - name: Application
+    description: Application features
+    kind: namespace
+  - name: Dashboard
+    description: Dashboard overview and statistics
+    parent: Application
   - name: Settings
     description: User settings and credentials
+    parent: Application
   - name: User
     description: User profile management
+    parent: Application

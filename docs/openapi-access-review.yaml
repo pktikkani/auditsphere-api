@@ -1,6 +1,8 @@
-openapi: 3.0.3
+openapi: 3.2.0
+jsonSchemaDialect: "https://json-schema.org/draft/2020-12/schema"
 info:
   title: AuditSphere API (Access-Review Branch)
+  summary: SharePoint security monitoring with Access Review capabilities
   description: |
     tRPC-based API for AuditSphere SPFX integration with Access Review capabilities.
     All endpoints require Azure AD authentication via Bearer token.
@@ -13,6 +15,9 @@ info:
   version: 1.1.0
   contact:
     name: AuditSphere Team
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
 
 servers:
   - url: /api/trpc
@@ -1223,21 +1228,34 @@ paths:
                     type: string
 
 tags:
+  # Access Review (parent category)
+  - name: Access Review
+    description: SharePoint permission access review and certification
+    kind: namespace
   - name: Access Review - Campaigns
     description: Access review campaign management
+    parent: Access Review
   - name: Access Review - Items
     description: Review item management
+    parent: Access Review
   - name: Access Review - Decisions
     description: Access review decisions
+    parent: Access Review
   - name: Access Review - Execution
     description: Execute removal decisions
+    parent: Access Review
   - name: Access Review - Schedules
     description: Scheduled review management
+    parent: Access Review
   - name: Access Review - Owners
     description: Designated owner management
+    parent: Access Review
   - name: Access Review - Notifications
     description: Access review notifications
+    parent: Access Review
   - name: Access Review - Reports
     description: Campaign reports and exports
+    parent: Access Review
   - name: Access Review - Scheduler
     description: Background scheduler operations
+    parent: Access Review
