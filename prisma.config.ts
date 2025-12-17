@@ -7,7 +7,7 @@ config({ path: '.env' });
 
 export default defineConfig({
   earlyAccess: true,
-  schema: './schema.prisma',
+  schema: './prisma/schema.prisma',
   migrate: {
     adapter: async () => {
       const { PrismaPg } = await import('@prisma/adapter-pg');
