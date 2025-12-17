@@ -28,4 +28,4 @@ RUN npx prisma generate
 EXPOSE 3000
 
 # Start - run db push to sync schema, then start server
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/src/server.js"]
+CMD ["sh", "-c", "npx prisma db push && node dist/src/server.js"]
