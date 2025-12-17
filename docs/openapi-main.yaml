@@ -181,6 +181,267 @@ components:
         hasMicrosoftConnection:
           type: boolean
 
+    # ==================== Access Review Schemas ====================
+    AccessReviewCampaign:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        scope:
+          type: object
+          properties:
+            siteUrls:
+              type: array
+              items:
+                type: string
+            includeDrives:
+              type: boolean
+            includeSubfolders:
+              type: boolean
+            maxDepth:
+              type: integer
+        status:
+          type: string
+          enum: [draft, scheduled, collecting, in_review, completed, cancelled]
+        dueDate:
+          type: string
+          format: date-time
+          nullable: true
+        totalItems:
+          type: integer
+        reviewedItems:
+          type: integer
+        retainedItems:
+          type: integer
+        removedItems:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    AccessReviewItem:
+      type: object
+      properties:
+        id:
+          type: string
+        campaignId:
+          type: string
+        resourceType:
+          type: string
+          enum: [site, drive, folder, file]
+        resourceId:
+          type: string
+        resourceName:
+          type: string
+        resourcePath:
+          type: string
+        siteUrl:
+          type: string
+          nullable: true
+        permissionId:
+          type: string
+        permissionType:
+          type: string
+          enum: [user, group, shareLink, application]
+        grantedTo:
+          type: string
+          nullable: true
+        grantedToId:
+          type: string
+          nullable: true
+        grantedToType:
+          type: string
+          enum: [user, group, application]
+          nullable: true
+        accessLevel:
+          type: string
+          enum: [read, write, owner]
+        permissionOrigin:
+          type: string
+          enum: [direct, inherited]
+          nullable: true
+        sharingLinkType:
+          type: string
+          enum: [anonymous, organization, users]
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        decision:
+          $ref: '#/components/schemas/AccessReviewDecision'
+
+    AccessReviewDecision:
+      type: object
+      properties:
+        id:
+          type: string
+        itemId:
+          type: string
+        decision:
+          type: string
+          enum: [retain, remove]
+        justification:
+          type: string
+          nullable: true
+        decidedAt:
+          type: string
+          format: date-time
+          nullable: true
+        reviewerEmail:
+          type: string
+          nullable: true
+        executionStatus:
+          type: string
+          enum: [pending, in_progress, completed, failed]
+        executedAt:
+          type: string
+          format: date-time
+          nullable: true
+        executionError:
+          type: string
+          nullable: true
+
+    ScheduledReview:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+        scope:
+          type: object
+        frequency:
+          type: string
+          enum: [weekly, monthly, quarterly, yearly]
+        dayOfWeek:
+          type: integer
+          nullable: true
+        dayOfMonth:
+          type: integer
+          nullable: true
+        time:
+          type: string
+        reviewPeriodDays:
+          type: integer
+        autoExecute:
+          type: boolean
+        nextRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    DesignatedOwner:
+      type: object
+      properties:
+        id:
+          type: string
+        siteUrl:
+          type: string
+        ownerEmail:
+          type: string
+        ownerName:
+          type: string
+          nullable: true
+        ownerType:
+          type: string
+          enum: [primary, backup, delegate]
+        notes:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    AccessReviewNotification:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        campaignId:
+          type: string
+          nullable: true
+        type:
+          type: string
+          enum: [campaign_started, campaign_due_soon, campaign_overdue, review_assigned, execution_complete, schedule_triggered]
+        title:
+          type: string
+        message:
+          type: string
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    # ==================== Graph API Schemas ====================
+    GraphDrive:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        webUrl:
+          type: string
+        driveType:
+          type: string
+          enum: [personal, business, documentLibrary]
+
+    GraphDriveItem:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        webUrl:
+          type: string
+        isFolder:
+          type: boolean
+        childCount:
+          type: integer
+        mimeType:
+          type: string
+          nullable: true
+
+    GraphSite:
+      type: object
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        webUrl:
+          type: string
+
 paths:
   # ==================== Alerts ====================
   /alerts.list:
@@ -973,6 +1234,76 @@ paths:
                   tenantName:
                     type: string
 
+  /microsoft.drives:
+    post:
+      tags: [Microsoft]
+      summary: Get drives (document libraries) for a site
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [siteId]
+              properties:
+                siteId:
+                  type: string
+      responses:
+        '200':
+          description: List of drives
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GraphDrive'
+
+  /microsoft.folderContents:
+    post:
+      tags: [Microsoft]
+      summary: Get folder contents (children)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [driveId]
+              properties:
+                driveId:
+                  type: string
+                folderId:
+                  type: string
+                  default: root
+      responses:
+        '200':
+          description: List of items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GraphDriveItem'
+
+  /microsoft.site:
+    post:
+      tags: [Microsoft]
+      summary: Get site details by ID
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [siteId]
+              properties:
+                siteId:
+                  type: string
+      responses:
+        '200':
+          description: Site details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphSite'
+
   # ==================== Reports ====================
   /reports.list:
     post:
@@ -1306,6 +1637,912 @@ paths:
               schema:
                 $ref: '#/components/schemas/User'
 
+  # ==================== Access Review - Campaigns ====================
+  /accessReview.listCampaigns:
+    post:
+      tags: [Access Review]
+      summary: List access review campaigns
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                page:
+                  type: integer
+                  default: 1
+                limit:
+                  type: integer
+                  default: 20
+                status:
+                  type: string
+                  enum: [draft, scheduled, collecting, in_review, completed, cancelled]
+      responses:
+        '200':
+          description: List of campaigns
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaigns:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AccessReviewCampaign'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /accessReview.getCampaign:
+    post:
+      tags: [Access Review]
+      summary: Get campaign by ID
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Campaign details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReviewCampaign'
+
+  /accessReview.createCampaign:
+    post:
+      tags: [Access Review]
+      summary: Create a new campaign
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, scope]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                description:
+                  type: string
+                scope:
+                  type: object
+                  required: [siteUrls]
+                  properties:
+                    siteUrls:
+                      type: array
+                      items:
+                        type: string
+                    includeDrives:
+                      type: boolean
+                      default: true
+                    includeSubfolders:
+                      type: boolean
+                      default: true
+                    maxDepth:
+                      type: integer
+                      default: 3
+                dueDate:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Created campaign
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReviewCampaign'
+
+  /accessReview.updateCampaign:
+    post:
+      tags: [Access Review]
+      summary: Update a campaign
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                description:
+                  type: string
+                scope:
+                  type: object
+                dueDate:
+                  type: string
+                  format: date-time
+                  nullable: true
+      responses:
+        '200':
+          description: Updated campaign
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReviewCampaign'
+
+  /accessReview.deleteCampaign:
+    post:
+      tags: [Access Review]
+      summary: Delete a campaign
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /accessReview.startCampaign:
+    post:
+      tags: [Access Review]
+      summary: Start campaign - collect permissions from SharePoint
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Campaign started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  itemsCollected:
+                    type: integer
+
+  /accessReview.completeCampaign:
+    post:
+      tags: [Access Review]
+      summary: Mark campaign as completed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /accessReview.executeCampaign:
+    post:
+      tags: [Access Review]
+      summary: Execute removal decisions in SharePoint
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Execution results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: object
+                    properties:
+                      success:
+                        type: integer
+                      failed:
+                        type: integer
+
+  /accessReview.getCampaignStats:
+    post:
+      tags: [Access Review]
+      summary: Get campaign statistics
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Campaign statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaign:
+                    type: object
+                  summary:
+                    type: object
+                    properties:
+                      totalItems:
+                        type: integer
+                      itemsWithDecisions:
+                        type: integer
+                      itemsNeedingReview:
+                        type: integer
+                      reviewProgress:
+                        type: integer
+                      retainDecisions:
+                        type: integer
+                      removeDecisions:
+                        type: integer
+                  breakdown:
+                    type: object
+
+  # ==================== Access Review - Items ====================
+  /accessReview.listItems:
+    post:
+      tags: [Access Review]
+      summary: List review items for a campaign
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [campaignId]
+              properties:
+                campaignId:
+                  type: string
+                page:
+                  type: integer
+                  default: 1
+                limit:
+                  type: integer
+                  default: 100
+                resourceType:
+                  type: string
+                  enum: [site, drive, folder, file, all]
+                grantedToType:
+                  type: string
+                  enum: [user, group, application, all]
+                decision:
+                  type: string
+                  enum: [retain, remove, pending]
+      responses:
+        '200':
+          description: List of items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AccessReviewItem'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /accessReview.getItem:
+    post:
+      tags: [Access Review]
+      summary: Get item details
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Item details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReviewItem'
+
+  # ==================== Access Review - Decisions ====================
+  /accessReview.submitDecision:
+    post:
+      tags: [Access Review]
+      summary: Submit decision for a review item
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [itemId, decision]
+              properties:
+                itemId:
+                  type: string
+                decision:
+                  type: string
+                  enum: [retain, remove]
+                justification:
+                  type: string
+      responses:
+        '200':
+          description: Submitted decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReviewDecision'
+
+  /accessReview.bulkDecisions:
+    post:
+      tags: [Access Review]
+      summary: Submit multiple decisions at once
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decisions]
+              properties:
+                decisions:
+                  type: array
+                  items:
+                    type: object
+                    required: [itemId, decision]
+                    properties:
+                      itemId:
+                        type: string
+                      decision:
+                        type: string
+                        enum: [retain, remove]
+      responses:
+        '200':
+          description: Bulk decision results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: object
+                    properties:
+                      success:
+                        type: integer
+                      failed:
+                        type: integer
+
+  /accessReview.bulkRetainAll:
+    post:
+      tags: [Access Review]
+      summary: Retain all pending items in a campaign
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [campaignId]
+              properties:
+                campaignId:
+                  type: string
+      responses:
+        '200':
+          description: Bulk retain results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: integer
+                  total:
+                    type: integer
+
+  # ==================== Access Review - Schedules ====================
+  /accessReview.listSchedules:
+    post:
+      tags: [Access Review]
+      summary: List scheduled reviews
+      responses:
+        '200':
+          description: List of schedules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedules:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScheduledReview'
+
+  /accessReview.createSchedule:
+    post:
+      tags: [Access Review]
+      summary: Create a scheduled review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, scope, frequency]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                description:
+                  type: string
+                scope:
+                  type: object
+                  required: [siteUrls]
+                  properties:
+                    siteUrls:
+                      type: array
+                      items:
+                        type: string
+                    includeDrives:
+                      type: boolean
+                    includeSubfolders:
+                      type: boolean
+                    maxDepth:
+                      type: integer
+                frequency:
+                  type: string
+                  enum: [weekly, monthly, quarterly, yearly]
+                dayOfWeek:
+                  type: integer
+                  minimum: 0
+                  maximum: 6
+                dayOfMonth:
+                  type: integer
+                  minimum: 1
+                  maximum: 31
+                time:
+                  type: string
+                  default: "09:00"
+                reviewPeriodDays:
+                  type: integer
+                  default: 14
+                autoExecute:
+                  type: boolean
+                  default: false
+                adminEmails:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Created schedule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledReview'
+
+  /accessReview.updateSchedule:
+    post:
+      tags: [Access Review]
+      summary: Update a scheduled review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                enabled:
+                  type: boolean
+                frequency:
+                  type: string
+                  enum: [weekly, monthly, quarterly, yearly]
+                reviewPeriodDays:
+                  type: integer
+                autoExecute:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated schedule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledReview'
+
+  /accessReview.deleteSchedule:
+    post:
+      tags: [Access Review]
+      summary: Delete a scheduled review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /accessReview.runSchedule:
+    post:
+      tags: [Access Review]
+      summary: Manually run a scheduled review now
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Created campaign from schedule
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaign:
+                    $ref: '#/components/schemas/AccessReviewCampaign'
+
+  # ==================== Access Review - Designated Owners ====================
+  /accessReview.listDesignatedOwners:
+    post:
+      tags: [Access Review]
+      summary: List designated owners
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                siteUrl:
+                  type: string
+                page:
+                  type: integer
+                  default: 1
+                limit:
+                  type: integer
+                  default: 50
+      responses:
+        '200':
+          description: List of owners
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  owners:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DesignatedOwner'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /accessReview.createDesignatedOwner:
+    post:
+      tags: [Access Review]
+      summary: Create a designated owner
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [siteUrl, ownerEmail]
+              properties:
+                siteUrl:
+                  type: string
+                ownerEmail:
+                  type: string
+                  format: email
+                ownerName:
+                  type: string
+                ownerType:
+                  type: string
+                  enum: [primary, backup, delegate]
+                  default: primary
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Created owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DesignatedOwner'
+
+  /accessReview.updateDesignatedOwner:
+    post:
+      tags: [Access Review]
+      summary: Update a designated owner
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+                ownerEmail:
+                  type: string
+                  format: email
+                ownerName:
+                  type: string
+                ownerType:
+                  type: string
+                  enum: [primary, backup, delegate]
+                notes:
+                  type: string
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DesignatedOwner'
+
+  /accessReview.deleteDesignatedOwner:
+    post:
+      tags: [Access Review]
+      summary: Delete a designated owner
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /accessReview.getOwnersForSite:
+    post:
+      tags: [Access Review]
+      summary: Get active owners for a specific site
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [siteUrl]
+              properties:
+                siteUrl:
+                  type: string
+      responses:
+        '200':
+          description: List of owners
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DesignatedOwner'
+
+  # ==================== Access Review - Notifications ====================
+  /accessReview.listNotifications:
+    post:
+      tags: [Access Review]
+      summary: List notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                unreadOnly:
+                  type: boolean
+                  default: false
+                campaignId:
+                  type: string
+                page:
+                  type: integer
+                  default: 1
+                limit:
+                  type: integer
+                  default: 50
+      responses:
+        '200':
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AccessReviewNotification'
+                  unreadCount:
+                    type: integer
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /accessReview.markNotificationRead:
+    post:
+      tags: [Access Review]
+      summary: Mark notification as read
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Updated notification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReviewNotification'
+
+  /accessReview.markAllNotificationsRead:
+    post:
+      tags: [Access Review]
+      summary: Mark all notifications as read
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  # ==================== Access Review - Reports ====================
+  /accessReview.getCampaignReport:
+    post:
+      tags: [Access Review]
+      summary: Get detailed campaign report
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Campaign report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaign:
+                    type: object
+                  summary:
+                    type: object
+                  breakdown:
+                    type: object
+                  items:
+                    type: array
+
+  /accessReview.sendCampaignReport:
+    post:
+      tags: [Access Review]
+      summary: Send campaign report via email with PDF
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [campaignId, recipientEmails]
+              properties:
+                campaignId:
+                  type: string
+                recipientEmails:
+                  type: array
+                  items:
+                    type: string
+                    format: email
+                includeDetails:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Email sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  recipientCount:
+                    type: integer
+
+  /accessReview.triggerScheduler:
+    post:
+      tags: [Access Review]
+      summary: Manually trigger the scheduler
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action:
+                  type: string
+                  enum: [all, due_schedules, reminders, overdue]
+                  default: all
+      responses:
+        '200':
+          description: Scheduler triggered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
 tags:
   # Security Monitoring (parent category)
   - name: Security
@@ -1331,6 +2568,21 @@ tags:
   - name: Reports
     description: Report generation and management
     parent: Audit & Compliance
+
+  # Access Review (parent category)
+  - name: Access Review
+    description: |
+      SharePoint access review and governance.
+
+      Features:
+      - Campaign management for periodic access reviews
+      - Permission collection from SharePoint sites and drives
+      - Decision workflow (retain/remove) with justifications
+      - Automated execution of removal decisions
+      - Scheduled reviews with reminders
+      - Designated owner management
+      - PDF report generation and email delivery
+      - Notification system for review activities
 
   # Microsoft Integration (parent category)
   - name: Microsoft Integration

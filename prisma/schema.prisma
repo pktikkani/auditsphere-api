@@ -29,6 +29,11 @@ model User {
   scheduledReports ScheduledReport[]
   alertConfigs     AlertConfig[]
 
+  // Access Review
+  accessReviewCampaigns AccessReviewCampaign[]
+  reviewedDecisions     AccessReviewDecision[]
+  scheduledReviews      ScheduledReview[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -470,4 +475,231 @@ model WebhookLog {
   @@index([processedAt])
   @@index([createdAt])
   @@map("webhook_logs")
+}
+
+// ============================================================================
+// Access Review
+// ============================================================================
+
+model AccessReviewCampaign {
+  id          String  @id @default(cuid())
+  name        String
+  description String? @db.Text
+
+  // Scope configuration
+  scope Json // { siteUrls: string[], includeDrives: boolean, includeSubfolders: boolean }
+
+  // Schedule
+  recurrence     String? // once, weekly, monthly, quarterly
+  cronExpression String?
+  timezone       String   @default("UTC")
+  startDate      DateTime?
+  dueDate        DateTime?
+
+  // Notifications
+  reminderDays           Int      @default(3)
+  notifyAdminsOnComplete Boolean  @default(true)
+  adminEmails            String[]
+
+  // Status tracking
+  status String @default("draft") // draft, scheduled, collecting, in_review, completed, cancelled
+
+  // Progress
+  totalItems    Int @default(0)
+  reviewedItems Int @default(0)
+  retainedItems Int @default(0)
+  removedItems  Int @default(0)
+
+  // Relations
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  // If created from a schedule
+  scheduledReviewId String?
+
+  items         AccessReviewItem[]
+  notifications AccessReviewNotification[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  @@index([status])
+  @@index([createdById])
+  @@index([dueDate])
+  @@index([scheduledReviewId])
+  @@map("access_review_campaigns")
+}
+
+model AccessReviewItem {
+  id         String               @id @default(cuid())
+  campaignId String
+  campaign   AccessReviewCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  // Resource info
+  resourceType String // site, drive, folder, file
+  resourceId   String // Graph ID
+  resourceName String
+  resourcePath String  @db.Text
+  siteUrl      String?
+
+  // Permission info
+  permissionId     String
+  permissionType   String // user, group, shareLink, application
+  grantedTo        String? // Display name or email
+  grantedToId      String?
+  grantedToType    String? // user, group, application
+  accessLevel      String // read, write, owner
+  permissionOrigin String? // direct, inherited
+  sharingLinkType  String? // anonymous, organization, users
+  expiresAt        DateTime?
+
+  // Assigned reviewer
+  assignedReviewerEmail String?
+  assignedReviewerName  String?
+
+  // Decision
+  decision AccessReviewDecision?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([campaignId, permissionId, resourceId])
+  @@index([campaignId])
+  @@index([assignedReviewerEmail])
+  @@index([grantedToType])
+  @@map("access_review_items")
+}
+
+model AccessReviewDecision {
+  id     String           @id @default(cuid())
+  itemId String           @unique
+  item   AccessReviewItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  // Decision
+  decision      String // pending, retain, remove
+  justification String? @db.Text
+  decidedAt     DateTime?
+
+  // Reviewer
+  reviewerId    String?
+  reviewer      User?   @relation(fields: [reviewerId], references: [id])
+  reviewerEmail String?
+
+  // Execution
+  executionStatus String   @default("pending") // pending, in_progress, completed, failed
+  executedAt      DateTime?
+  executionError  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([decision])
+  @@index([reviewerId])
+  @@index([executionStatus])
+  @@map("access_review_decisions")
+}
+
+model DesignatedOwner {
+  id String @id @default(cuid())
+
+  // Who created this
+  userId String
+
+  // Resource matching
+  siteUrl String @db.Text // Site URL this owner is designated for
+
+  // Owner info
+  ownerEmail String
+  ownerName  String?
+  ownerType  String  @default("primary") // primary, backup, delegate
+
+  // Notes and status
+  notes    String? @db.Text
+  isActive Boolean @default(true)
+
+  // Options
+  notifyOnReview Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, siteUrl, ownerEmail])
+  @@index([userId])
+  @@index([siteUrl])
+  @@index([ownerEmail])
+  @@index([isActive])
+  @@map("designated_owners")
+}
+
+model AccessReviewNotification {
+  id     String @id @default(cuid())
+  userId String
+
+  // Optional campaign link
+  campaignId String?
+  campaign   AccessReviewCampaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  // Notification details
+  type    String // campaign_started, campaign_due_soon, campaign_overdue, review_assigned, execution_complete, schedule_triggered
+  title   String
+  message String @db.Text
+
+  // Status
+  readAt DateTime?
+  sentAt DateTime? // For email notifications
+  error  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([campaignId])
+  @@index([type])
+  @@index([readAt])
+  @@map("access_review_notifications")
+}
+
+model ScheduledReview {
+  id          String  @id @default(cuid())
+  name        String
+  description String? @db.Text
+  enabled     Boolean @default(true)
+
+  // Scope - which sites/resources to review
+  scope Json // { siteUrls: string[], includeDrives: boolean, includeSubfolders: boolean, maxDepth: number }
+
+  // Schedule
+  frequency   String // weekly, monthly, quarterly, yearly
+  dayOfWeek   Int? // 0-6 for weekly (0=Sunday)
+  dayOfMonth  Int? // 1-31 for monthly
+  monthOfYear Int? // 1-12 for yearly
+  time        String @default("09:00") // HH:mm format
+  timezone    String @default("UTC")
+
+  // Review settings
+  reviewPeriodDays Int     @default(14) // Days to complete review
+  reminderDays     Int[]   @default([7, 3, 1]) // Days before due to send reminders
+  autoExecute      Boolean @default(false) // Auto-execute removals after due date
+
+  // Notifications
+  notifyAdmins       Boolean  @default(true)
+  adminEmails        String[]
+  sendReportToOwners Boolean  @default(true) // Email PDF report to owners
+
+  // Tracking
+  lastRunAt      DateTime?
+  nextRunAt      DateTime?
+  lastCampaignId String?
+
+  // Relations
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([enabled])
+  @@index([nextRunAt])
+  @@index([createdById])
+  @@map("scheduled_reviews")
 }

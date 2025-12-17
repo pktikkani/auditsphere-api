@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure, publicProcedure } from '../init.js';
-import { db } from '@/lib/db/prisma.js';
+import { db } from '../../lib/db/prisma.js';
 import { TRPCError } from '@trpc/server';
-import { getAppCredentials } from '@/lib/microsoft/token-manager.js';
+import { PermissionsClient } from '../../lib/microsoft/permissions.js';
+import { getAppCredentials } from '../../lib/microsoft/token-manager.js';
 
 export const microsoftRouter = createTRPCRouter({
   /**
@@ -105,22 +106,32 @@ export const microsoftRouter = createTRPCRouter({
   }),
 
   /**
-   * Get SharePoint sites
+   * Get SharePoint sites from Microsoft Graph
    */
-  sites: protectedProcedure.query(async () => {
-    const sites = await db.sharePointSite.findMany({
-      orderBy: { displayName: 'asc' },
-      select: {
-        id: true,
-        graphId: true,
-        displayName: true,
-        webUrl: true,
-        siteCollection: true,
-        createdAt: true,
-      },
-    });
+  sites: protectedProcedure.query(async ({ ctx }) => {
+    if (!ctx.user) {
+      throw new TRPCError({
+        code: 'UNAUTHORIZED',
+        message: 'User not found',
+      });
+    }
 
-    return sites;
+    try {
+      const permissionsClient = new PermissionsClient(ctx.user.id);
+      const sites = await permissionsClient.getAllSites();
+
+      return sites.map(site => ({
+        id: site.id,
+        graphId: site.id,
+        displayName: site.displayName,
+        name: site.name,
+        webUrl: site.webUrl,
+        siteCollection: site.siteCollection?.hostname || null,
+      }));
+    } catch (error) {
+      console.error('Error fetching sites:', error);
+      return [];
+    }
   }),
 
   /**
@@ -189,4 +200,86 @@ export const microsoftRouter = createTRPCRouter({
       tenantName: connection.tenantName,
     };
   }),
+
+  /**
+   * Get drives (document libraries) for a site
+   */
+  drives: protectedProcedure
+    .input(z.object({ siteId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'User not found' });
+      }
+
+      try {
+        const permissionsClient = new PermissionsClient(ctx.user.id);
+        const drives = await permissionsClient.getSiteDrives(input.siteId);
+
+        return drives.map(drive => ({
+          id: drive.id,
+          name: drive.name,
+          webUrl: drive.webUrl,
+          driveType: drive.driveType,
+        }));
+      } catch (error) {
+        console.error('Error fetching drives:', error);
+        return [];
+      }
+    }),
+
+  /**
+   * Get folder contents (children)
+   */
+  folderContents: protectedProcedure
+    .input(z.object({
+      driveId: z.string(),
+      folderId: z.string().default('root'),
+    }))
+    .query(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'User not found' });
+      }
+
+      try {
+        const permissionsClient = new PermissionsClient(ctx.user.id);
+        const items = await permissionsClient.listDriveItemChildren(input.driveId, input.folderId);
+
+        return items.map(item => ({
+          id: item.id,
+          name: item.name,
+          webUrl: item.webUrl,
+          isFolder: !!item.folder,
+          childCount: item.folder?.childCount || 0,
+          mimeType: item.file?.mimeType || null,
+        }));
+      } catch (error) {
+        console.error('Error fetching folder contents:', error);
+        return [];
+      }
+    }),
+
+  /**
+   * Get site details by ID
+   */
+  site: protectedProcedure
+    .input(z.object({ siteId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'User not found' });
+      }
+
+      try {
+        const permissionsClient = new PermissionsClient(ctx.user.id);
+        const site = await permissionsClient.getSiteById(input.siteId);
+
+        return {
+          id: site.id,
+          displayName: site.displayName,
+          webUrl: site.webUrl,
+        };
+      } catch (error) {
+        console.error('Error fetching site:', error);
+        return null;
+      }
+    }),
 });

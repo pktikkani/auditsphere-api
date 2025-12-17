@@ -6,6 +6,7 @@ import { appRouter } from './trpc/routers/_app.js';
 import { createTRPCContext } from './trpc/init.js';
 import { microsoftRouter } from './routes/microsoft.js';
 import { scheduledSync, scheduledAnomalyDetection } from './jobs/scheduled.js';
+import { startAccessReviewScheduler } from './jobs/access-review-scheduler.js';
 import { db } from './lib/db/prisma.js';
 import jwt from 'jsonwebtoken';
 
@@ -153,6 +154,9 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
   console.log(`📍 tRPC endpoint: http://localhost:${PORT}/api/trpc/*`);
+
+  // Start the Access Review scheduler
+  startAccessReviewScheduler();
 });
 
 export default app;

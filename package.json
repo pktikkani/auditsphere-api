@@ -5,7 +5,9 @@
   "type": "module",
   "main": "dist/src/server.js",
   "scripts": {
+    "postinstall": "prisma generate",
     "build": "prisma generate && tsc && tsc-alias",
+    "build:railway": "prisma generate && tsc && tsc-alias && prisma db push",
     "watch": "tsc -w",
     "clean": "rimraf dist",
     "start": "node dist/src/server.js",
@@ -18,8 +20,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@microsoft/microsoft-graph-types": "^2.43.1",
     "@prisma/adapter-pg": "^7.1.0",
     "@prisma/client": "^7.1.0",
+    "@react-pdf/renderer": "^4.3.1",
     "@trpc/server": "^11.7.2",
     "cors": "^2.8.5",
     "express": "^5.2.1",
@@ -32,7 +36,6 @@
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
-    "tsc-alias": "^1.8.10",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.10.2",
@@ -40,6 +43,7 @@
     "@types/pg": "^8.16.0",
     "prisma": "^7.1.0",
     "rimraf": "^6.0.1",
+    "tsc-alias": "^1.8.10",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   },

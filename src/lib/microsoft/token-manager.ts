@@ -7,6 +7,9 @@ const MANAGEMENT_SCOPE = 'https://manage.office.com/.default';
 // Cache for Management API tokens (app-only)
 const managementTokenCache: Map<string, { token: string; expiresAt: Date }> = new Map();
 
+// Cache for Graph API tokens (app-only)
+const graphTokenCache: Map<string, { token: string; expiresAt: Date }> = new Map();
+
 interface TokenResponse {
   access_token: string;
   refresh_token: string;
@@ -290,6 +293,53 @@ export class TokenManager {
 
     // Cache the token
     managementTokenCache.set(cacheKey, {
+      token: data.access_token,
+      expiresAt,
+    });
+
+    return data.access_token;
+  }
+
+  /**
+   * Get a Graph API token using client credentials flow (app-only)
+   * Required for Sites.FullControl.All and other application permissions
+   */
+  async getAppOnlyGraphToken(): Promise<string> {
+    const credentials = await getAppCredentials(this.userId);
+    const tenantId = this.tenantId || credentials.tenantId;
+    const cacheKey = `graph:${tenantId}:${this.userId}`;
+
+    // Check cache
+    const cached = graphTokenCache.get(cacheKey);
+    if (cached && cached.expiresAt.getTime() - Date.now() > 60000) {
+      return cached.token;
+    }
+
+    const tokenEndpoint = `${MICROSOFT_TOKEN_URL}/${tenantId}/oauth2/v2.0/token`;
+
+    const response = await fetch(tokenEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        client_id: credentials.clientId,
+        client_secret: credentials.clientSecret,
+        grant_type: 'client_credentials',
+        scope: 'https://graph.microsoft.com/.default',
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to get Graph API token: ${error}`);
+    }
+
+    const data = await response.json() as { access_token: string; expires_in: number };
+    const expiresAt = new Date(Date.now() + data.expires_in * 1000);
+
+    // Cache the token
+    graphTokenCache.set(cacheKey, {
       token: data.access_token,
       expiresAt,
     });

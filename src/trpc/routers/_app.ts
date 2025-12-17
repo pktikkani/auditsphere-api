@@ -9,6 +9,7 @@ import { microsoftRouter } from './microsoft.js';
 import { sitesRouter } from './sites.js';
 import { settingsRouter } from './settings.js';
 import { userRouter } from './user.js';
+import { accessReviewRouter } from './accessReview.js';
 
 /**
  * Root tRPC Router
@@ -33,6 +34,9 @@ export const appRouter = createTRPCRouter({
   // User settings and profile
   settings: settingsRouter,
   user: userRouter,
+
+  // Access Review
+  accessReview: accessReviewRouter,
 });
 
 /**
