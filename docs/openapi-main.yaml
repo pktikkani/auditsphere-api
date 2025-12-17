@@ -331,15 +331,43 @@ components:
         dayOfWeek:
           type: integer
           nullable: true
+          description: Day of week (0=Sunday, 6=Saturday)
         dayOfMonth:
           type: integer
           nullable: true
+          description: Day of month (1-31)
+        monthOfYear:
+          type: integer
+          nullable: true
+          description: Month for yearly schedules (1=Jan, 12=Dec)
         time:
           type: string
+          description: Time in HH:MM format
+        timezone:
+          type: string
+          description: Timezone for schedule execution
         reviewPeriodDays:
           type: integer
+          description: Number of days allowed for review completion
+        reminderDays:
+          type: array
+          items:
+            type: integer
+          description: Days before due date to send reminders
         autoExecute:
           type: boolean
+          description: Auto-execute removal decisions when review completes
+        notifyAdmins:
+          type: boolean
+          description: Send notifications to admin emails
+        sendReportToOwners:
+          type: boolean
+          description: Send report emails to designated site owners
+        adminEmails:
+          type: array
+          items:
+            type: string
+          description: List of admin email addresses to notify
         nextRunAt:
           type: string
           format: date-time
@@ -1939,6 +1967,12 @@ paths:
                       retainDecisions:
                         type: integer
                       removeDecisions:
+                        type: integer
+                      executedRemovals:
+                        type: integer
+                      failedRemovals:
+                        type: integer
+                      pendingRemovals:
                         type: integer
                   breakdown:
                     type: object

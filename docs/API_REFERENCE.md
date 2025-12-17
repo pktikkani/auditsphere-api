@@ -709,6 +709,115 @@ Get connection health status.
 
 ---
 
+### `microsoft.checkConnection`
+
+Check if API can connect to Microsoft using app credentials (public endpoint).
+
+**Type:** Query
+
+**Authentication:** None required (public endpoint)
+
+**Response:**
+```json
+{
+  "connected": true,
+  "message": "Connected to Microsoft 365",
+  "tenantId": "xxx-xxx-xxx",
+  "tenantName": "Contoso"
+}
+```
+
+---
+
+### `microsoft.drives`
+
+Get drives (document libraries) for a site.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  siteId: string;
+}
+```
+
+**Response:**
+```json
+[
+  {
+    "id": "drive-guid",
+    "name": "Documents",
+    "webUrl": "https://tenant.sharepoint.com/sites/hr/Shared Documents",
+    "driveType": "documentLibrary"
+  }
+]
+```
+
+---
+
+### `microsoft.folderContents`
+
+Get folder contents (children).
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  driveId: string;
+  folderId?: string;  // Default: "root"
+}
+```
+
+**Response:**
+```json
+[
+  {
+    "id": "item-guid",
+    "name": "Reports",
+    "webUrl": "https://tenant.sharepoint.com/...",
+    "isFolder": true,
+    "childCount": 5,
+    "mimeType": null
+  },
+  {
+    "id": "item-guid-2",
+    "name": "report.docx",
+    "webUrl": "https://tenant.sharepoint.com/...",
+    "isFolder": false,
+    "childCount": 0,
+    "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  }
+]
+```
+
+---
+
+### `microsoft.site`
+
+Get site details by ID.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  siteId: string;
+}
+```
+
+**Response:**
+```json
+{
+  "id": "site-guid",
+  "displayName": "HR Portal",
+  "webUrl": "https://tenant.sharepoint.com/sites/hr"
+}
+```
+
+---
+
 ## Reports Router
 
 ### `reports.list`
@@ -1005,6 +1114,769 @@ Get current user info.
   "name": "John Doe",
   "role": "admin",
   "hasMicrosoftConnection": true
+}
+```
+
+---
+
+## Access Review Router
+
+The Access Review module enables SharePoint permission governance through campaigns, scheduled reviews, and automated remediation.
+
+### Campaigns
+
+#### `accessReview.listCampaigns`
+
+List access review campaigns.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  page?: number;           // Default: 1
+  limit?: number;          // Default: 20
+  status?: 'draft' | 'scheduled' | 'collecting' | 'in_review' | 'completed' | 'cancelled';
+}
+```
+
+**Response:**
+```json
+{
+  "campaigns": [...],
+  "pagination": {
+    "total": 10,
+    "page": 1,
+    "totalPages": 1
+  }
+}
+```
+
+---
+
+#### `accessReview.getCampaign`
+
+Get campaign by ID.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+---
+
+#### `accessReview.createCampaign`
+
+Create a new access review campaign.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  name: string;
+  description?: string;
+  scope: {
+    siteUrls: string[];
+    includeDrives?: boolean;      // Default: true
+    includeSubfolders?: boolean;  // Default: true
+    maxDepth?: number;            // Default: 3
+  };
+  dueDate?: string;               // ISO 8601 datetime
+  recurrence?: string;
+}
+```
+
+---
+
+#### `accessReview.updateCampaign`
+
+Update a campaign.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  id: string;
+  name?: string;
+  description?: string;
+  scope?: object;
+  dueDate?: string | null;
+  recurrence?: string | null;
+}
+```
+
+---
+
+#### `accessReview.deleteCampaign`
+
+Delete a campaign.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+---
+
+#### `accessReview.startCampaign`
+
+Start a campaign - collects permissions from SharePoint.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "itemsCollected": 150
+}
+```
+
+---
+
+#### `accessReview.completeCampaign`
+
+Mark a campaign as completed.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+---
+
+#### `accessReview.executeCampaign`
+
+Execute removal decisions in SharePoint.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+**Response:**
+```json
+{
+  "results": {
+    "success": 10,
+    "failed": 2
+  }
+}
+```
+
+---
+
+#### `accessReview.getCampaignStats`
+
+Get campaign statistics.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+**Response:**
+```json
+{
+  "campaign": {
+    "id": "campaign-123",
+    "name": "Q1 Access Review",
+    "status": "in_review",
+    "dueDate": "2025-01-31T00:00:00Z"
+  },
+  "summary": {
+    "totalItems": 150,
+    "itemsWithDecisions": 100,
+    "itemsNeedingReview": 50,
+    "reviewProgress": 67,
+    "retainDecisions": 80,
+    "removeDecisions": 20,
+    "executedRemovals": 15,
+    "failedRemovals": 2,
+    "pendingRemovals": 3
+  },
+  "breakdown": {
+    "byResourceType": [...],
+    "byGrantedToType": [...]
+  }
+}
+```
+
+---
+
+### Review Items
+
+#### `accessReview.myReviews`
+
+Get items assigned to the current user.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  status?: 'pending' | 'completed';
+  page?: number;      // Default: 1
+  limit?: number;     // Default: 50
+}
+```
+
+**Response:**
+```json
+{
+  "items": [...],
+  "pendingByCampaign": [
+    { "campaignId": "camp-123", "count": 25 }
+  ],
+  "pagination": {...}
+}
+```
+
+---
+
+#### `accessReview.listItems`
+
+List review items for a campaign.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  campaignId: string;
+  page?: number;              // Default: 1
+  limit?: number;             // Default: 100
+  resourceType?: 'site' | 'drive' | 'folder' | 'file' | 'all';
+  grantedToType?: 'user' | 'group' | 'application' | 'all';
+  decision?: 'retain' | 'remove' | 'pending';
+}
+```
+
+---
+
+#### `accessReview.getItem`
+
+Get item details.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+---
+
+### Decisions
+
+#### `accessReview.submitDecision`
+
+Submit a decision for a review item.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  itemId: string;
+  decision: 'retain' | 'remove';
+  justification?: string;
+}
+```
+
+---
+
+#### `accessReview.bulkDecisions`
+
+Submit multiple decisions at once.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  decisions: Array<{
+    itemId: string;
+    decision: 'retain' | 'remove';
+  }>;
+}
+```
+
+**Response:**
+```json
+{
+  "results": {
+    "success": 10,
+    "failed": 0
+  }
+}
+```
+
+---
+
+#### `accessReview.bulkRetainAll`
+
+Retain all pending items in a campaign.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  campaignId: string;
+}
+```
+
+**Response:**
+```json
+{
+  "success": 50,
+  "total": 50
+}
+```
+
+---
+
+### Scheduled Reviews
+
+#### `accessReview.listSchedules`
+
+List scheduled reviews.
+
+**Type:** Query
+
+**Response:**
+```json
+{
+  "schedules": [...]
+}
+```
+
+---
+
+#### `accessReview.getSchedule`
+
+Get schedule by ID.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+---
+
+#### `accessReview.createSchedule`
+
+Create a scheduled review.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  name: string;
+  description?: string;
+  scope: {
+    siteUrls: string[];
+    includeDrives?: boolean;
+    includeSubfolders?: boolean;
+    maxDepth?: number;
+  };
+  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  dayOfWeek?: number;         // 0=Sunday, 6=Saturday (for weekly)
+  dayOfMonth?: number;        // 1-31 (for monthly/quarterly/yearly)
+  monthOfYear?: number;       // 1-12 (for yearly)
+  time?: string;              // Default: "09:00"
+  timezone?: string;          // Default: "UTC"
+  reviewPeriodDays?: number;  // Default: 14
+  reminderDays?: number[];    // Default: [7, 3, 1]
+  autoExecute?: boolean;      // Default: false
+  notifyAdmins?: boolean;     // Default: true
+  sendReportToOwners?: boolean;  // Default: true
+  adminEmails?: string[];
+}
+```
+
+---
+
+#### `accessReview.updateSchedule`
+
+Update a scheduled review.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  id: string;
+  name?: string;
+  description?: string;
+  enabled?: boolean;
+  scope?: object;
+  frequency?: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  dayOfWeek?: number;
+  dayOfMonth?: number;
+  monthOfYear?: number;
+  time?: string;
+  timezone?: string;
+  reviewPeriodDays?: number;
+  reminderDays?: number[];
+  autoExecute?: boolean;
+  notifyAdmins?: boolean;
+  sendReportToOwners?: boolean;
+  adminEmails?: string[];
+}
+```
+
+---
+
+#### `accessReview.deleteSchedule`
+
+Delete a scheduled review.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+---
+
+#### `accessReview.runSchedule`
+
+Manually run a scheduled review now.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+**Response:**
+```json
+{
+  "campaign": {...}
+}
+```
+
+---
+
+### Designated Owners
+
+#### `accessReview.listDesignatedOwners`
+
+List designated owners.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  siteUrl?: string;
+  page?: number;      // Default: 1
+  limit?: number;     // Default: 50
+}
+```
+
+---
+
+#### `accessReview.getDesignatedOwner`
+
+Get designated owner by ID.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+---
+
+#### `accessReview.createDesignatedOwner`
+
+Create a designated owner.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  siteUrl: string;
+  ownerEmail: string;
+  ownerName?: string;
+  ownerType?: 'primary' | 'backup' | 'delegate';  // Default: 'primary'
+  notes?: string;
+}
+```
+
+---
+
+#### `accessReview.updateDesignatedOwner`
+
+Update a designated owner.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  id: string;
+  ownerEmail?: string;
+  ownerName?: string;
+  ownerType?: 'primary' | 'backup' | 'delegate';
+  notes?: string;
+  isActive?: boolean;
+}
+```
+
+---
+
+#### `accessReview.deleteDesignatedOwner`
+
+Delete a designated owner.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+---
+
+#### `accessReview.getOwnersForSite`
+
+Get active owners for a specific site.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  siteUrl: string;
+}
+```
+
+---
+
+### Notifications
+
+#### `accessReview.listNotifications`
+
+List notifications.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  unreadOnly?: boolean;   // Default: false
+  campaignId?: string;
+  page?: number;          // Default: 1
+  limit?: number;         // Default: 50
+}
+```
+
+**Response:**
+```json
+{
+  "notifications": [...],
+  "unreadCount": 5,
+  "pagination": {...}
+}
+```
+
+---
+
+#### `accessReview.createNotification`
+
+Create a notification.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  type: 'campaign_started' | 'campaign_due_soon' | 'campaign_overdue' | 'review_assigned' | 'execution_complete' | 'schedule_triggered';
+  title: string;
+  message: string;
+  campaignId?: string;
+  recipientEmail?: string;
+  sendEmail?: boolean;    // Default: false
+}
+```
+
+---
+
+#### `accessReview.markNotificationRead`
+
+Mark a notification as read.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+---
+
+#### `accessReview.markAllNotificationsRead`
+
+Mark all notifications as read.
+
+**Type:** Mutation
+
+---
+
+#### `accessReview.deleteNotification`
+
+Delete a notification.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+---
+
+### Reports
+
+#### `accessReview.getCampaignReport`
+
+Get detailed campaign report.
+
+**Type:** Query
+
+**Input:**
+```typescript
+{
+  id: string;
+}
+```
+
+**Response:**
+```json
+{
+  "campaign": {...},
+  "summary": {
+    "totalItems": 150,
+    "retainCount": 100,
+    "removeCount": 30,
+    "pendingCount": 20,
+    "executedCount": 25,
+    "failedCount": 5,
+    "reviewProgress": 87
+  },
+  "breakdown": {
+    "byResourceType": [...],
+    "byGranteeType": [...],
+    "byReviewer": [...]
+  },
+  "items": [...]
+}
+```
+
+---
+
+#### `accessReview.sendCampaignReport`
+
+Send campaign report via email with PDF attachment.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  campaignId: string;
+  recipientEmails: string[];
+  includeDetails?: boolean;   // Default: true
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Report sent to 3 recipient(s)",
+  "recipientCount": 3
+}
+```
+
+---
+
+### Scheduler
+
+#### `accessReview.triggerScheduler`
+
+Manually trigger the scheduler.
+
+**Type:** Mutation
+
+**Input:**
+```typescript
+{
+  action?: 'all' | 'due_schedules' | 'reminders' | 'overdue';  // Default: 'all'
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Full scheduler run completed"
 }
 ```
 
