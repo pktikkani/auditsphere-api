@@ -1944,6 +1944,49 @@ paths:
                     type: object
 
   # ==================== Access Review - Items ====================
+  /accessReview.myReviews:
+    post:
+      tags: [Access Review]
+      summary: Get items assigned to current user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [pending, completed]
+                page:
+                  type: integer
+                  default: 1
+                limit:
+                  type: integer
+                  default: 50
+      responses:
+        '200':
+          description: User's assigned review items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AccessReviewItem'
+                  pendingByCampaign:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        campaignId:
+                          type: string
+                        count:
+                          type: integer
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
   /accessReview.listItems:
     post:
       tags: [Access Review]
@@ -2117,6 +2160,30 @@ paths:
                     items:
                       $ref: '#/components/schemas/ScheduledReview'
 
+  /accessReview.getSchedule:
+    post:
+      tags: [Access Review]
+      summary: Get schedule by ID
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Schedule details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedule:
+                    $ref: '#/components/schemas/ScheduledReview'
+
   /accessReview.createSchedule:
     post:
       tags: [Access Review]
@@ -2158,15 +2225,32 @@ paths:
                   type: integer
                   minimum: 1
                   maximum: 31
+                monthOfYear:
+                  type: integer
+                  minimum: 1
+                  maximum: 12
+                  description: Month for yearly schedules (1=Jan, 12=Dec)
                 time:
                   type: string
                   default: "09:00"
+                timezone:
+                  type: string
+                  default: UTC
                 reviewPeriodDays:
                   type: integer
                   default: 14
+                reminderDays:
+                  type: array
+                  items:
+                    type: integer
+                  default: [7, 3, 1]
+                  description: Days before due date to send reminders
                 autoExecute:
                   type: boolean
                   default: false
+                notifyAdmins:
+                  type: boolean
+                  default: true
                 sendReportToOwners:
                   type: boolean
                   default: true
@@ -2226,11 +2310,23 @@ paths:
                   type: integer
                   minimum: 1
                   maximum: 31
+                monthOfYear:
+                  type: integer
+                  minimum: 1
+                  maximum: 12
                 time:
+                  type: string
+                timezone:
                   type: string
                 reviewPeriodDays:
                   type: integer
+                reminderDays:
+                  type: array
+                  items:
+                    type: integer
                 autoExecute:
+                  type: boolean
+                notifyAdmins:
                   type: boolean
                 sendReportToOwners:
                   type: boolean

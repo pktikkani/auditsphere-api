@@ -369,6 +369,89 @@ export const accessReviewRouter = createTRPCRouter({
 
   // ==================== Items ====================
 
+  myReviews: protectedProcedure
+    .input(
+      z.object({
+        status: z.enum(['pending', 'completed']).optional(),
+        page: z.number().default(1),
+        limit: z.number().default(50),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { status, page, limit } = input;
+      const skip = (page - 1) * limit;
+
+      // Build where clause for items assigned to current user
+      let decisionFilter = {};
+      if (status === 'pending') {
+        decisionFilter = { decision: null };
+      } else if (status === 'completed') {
+        decisionFilter = { decision: { isNot: null } };
+      }
+
+      const where = {
+        assignedReviewerEmail: ctx.user.email,
+        campaign: {
+          status: { in: ['in_review', 'collecting'] },
+        },
+        ...decisionFilter,
+      };
+
+      const [items, total] = await Promise.all([
+        db.accessReviewItem.findMany({
+          where,
+          include: {
+            campaign: {
+              select: {
+                id: true,
+                name: true,
+                status: true,
+                dueDate: true,
+              },
+            },
+            decision: {
+              include: {
+                reviewer: {
+                  select: { name: true, email: true },
+                },
+              },
+            },
+          },
+          orderBy: [
+            { campaign: { dueDate: 'asc' } },
+            { createdAt: 'asc' },
+          ],
+          skip,
+          take: limit,
+        }),
+        db.accessReviewItem.count({ where }),
+      ]);
+
+      // Get counts by campaign for summary
+      const campaignCounts = await db.accessReviewItem.groupBy({
+        by: ['campaignId'],
+        where: {
+          assignedReviewerEmail: ctx.user.email,
+          decision: null,
+          campaign: { status: 'in_review' },
+        },
+        _count: true,
+      });
+
+      return {
+        items,
+        pendingByCampaign: campaignCounts.map(c => ({
+          campaignId: c.campaignId,
+          count: c._count,
+        })),
+        pagination: {
+          total,
+          page,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    }),
+
   listItems: protectedProcedure
     .input(
       z.object({
@@ -673,6 +756,25 @@ export const accessReviewRouter = createTRPCRouter({
     return { schedules };
   }),
 
+  getSchedule: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input }) => {
+      const schedule = await db.scheduledReview.findUnique({
+        where: { id: input.id },
+        include: {
+          createdBy: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+      });
+
+      if (!schedule) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Schedule not found' });
+      }
+
+      return { schedule };
+    }),
+
   createSchedule: protectedProcedure
     .input(
       z.object({
@@ -680,18 +782,29 @@ export const accessReviewRouter = createTRPCRouter({
         description: z.string().optional(),
         scope: scopeSchema,
         frequency: z.enum(['weekly', 'monthly', 'quarterly', 'yearly']),
-        dayOfWeek: z.number().optional(),
-        dayOfMonth: z.number().optional(),
+        dayOfWeek: z.number().min(0).max(6).optional(), // 0=Sunday, 6=Saturday
+        dayOfMonth: z.number().min(1).max(31).optional(),
+        monthOfYear: z.number().min(1).max(12).optional(), // 1=Jan, 12=Dec (for yearly)
         time: z.string().default('09:00'),
+        timezone: z.string().default('UTC'),
         reviewPeriodDays: z.number().default(14),
+        reminderDays: z.array(z.number()).default([7, 3, 1]),
         autoExecute: z.boolean().default(false),
+        notifyAdmins: z.boolean().default(true),
         sendReportToOwners: z.boolean().default(true),
         adminEmails: z.array(z.string()).default([]),
       })
     )
     .mutation(async ({ ctx, input }) => {
       // Calculate next run date
-      const nextRunAt = calculateNextRun(input.frequency, input.dayOfWeek, input.dayOfMonth, input.time);
+      const nextRunAt = calculateNextRun(
+        input.frequency,
+        input.dayOfWeek,
+        input.dayOfMonth,
+        input.time,
+        input.monthOfYear,
+        input.timezone
+      );
 
       const schedule = await db.scheduledReview.create({
         data: {
@@ -701,9 +814,13 @@ export const accessReviewRouter = createTRPCRouter({
           frequency: input.frequency,
           dayOfWeek: input.dayOfWeek ?? null,
           dayOfMonth: input.dayOfMonth ?? null,
+          monthOfYear: input.monthOfYear ?? null,
           time: input.time,
+          timezone: input.timezone,
           reviewPeriodDays: input.reviewPeriodDays,
+          reminderDays: input.reminderDays,
           autoExecute: input.autoExecute,
+          notifyAdmins: input.notifyAdmins,
           sendReportToOwners: input.sendReportToOwners,
           adminEmails: input.adminEmails,
           nextRunAt,
@@ -723,11 +840,15 @@ export const accessReviewRouter = createTRPCRouter({
         enabled: z.boolean().optional(),
         scope: scopeSchema.optional(),
         frequency: z.enum(['weekly', 'monthly', 'quarterly', 'yearly']).optional(),
-        dayOfWeek: z.number().optional(),
-        dayOfMonth: z.number().optional(),
+        dayOfWeek: z.number().min(0).max(6).optional(),
+        dayOfMonth: z.number().min(1).max(31).optional(),
+        monthOfYear: z.number().min(1).max(12).optional(),
         time: z.string().optional(),
+        timezone: z.string().optional(),
         reviewPeriodDays: z.number().optional(),
+        reminderDays: z.array(z.number()).optional(),
         autoExecute: z.boolean().optional(),
+        notifyAdmins: z.boolean().optional(),
         sendReportToOwners: z.boolean().optional(),
         adminEmails: z.array(z.string()).optional(),
       })
@@ -737,14 +858,16 @@ export const accessReviewRouter = createTRPCRouter({
 
       // Calculate new next run if schedule parameters changed
       let nextRunAt: Date | undefined;
-      if (data.frequency || data.dayOfWeek !== undefined || data.dayOfMonth !== undefined || data.time) {
+      if (data.frequency || data.dayOfWeek !== undefined || data.dayOfMonth !== undefined || data.monthOfYear !== undefined || data.time || data.timezone) {
         const current = await db.scheduledReview.findUnique({ where: { id } });
         if (current) {
           nextRunAt = calculateNextRun(
             data.frequency || current.frequency,
             data.dayOfWeek ?? current.dayOfWeek ?? undefined,
             data.dayOfMonth ?? current.dayOfMonth ?? undefined,
-            data.time || current.time
+            data.time || current.time,
+            data.monthOfYear ?? current.monthOfYear ?? undefined,
+            data.timezone || current.timezone
           );
         }
       }
@@ -752,9 +875,23 @@ export const accessReviewRouter = createTRPCRouter({
       const schedule = await db.scheduledReview.update({
         where: { id },
         data: {
-          ...data,
-          scope: data.scope ? (data.scope as Prisma.InputJsonValue) : undefined,
-          ...(nextRunAt ? { nextRunAt } : {}),
+          ...(data.name !== undefined && { name: data.name }),
+          ...(data.description !== undefined && { description: data.description }),
+          ...(data.enabled !== undefined && { enabled: data.enabled }),
+          ...(data.scope && { scope: data.scope as Prisma.InputJsonValue }),
+          ...(data.frequency && { frequency: data.frequency }),
+          ...(data.dayOfWeek !== undefined && { dayOfWeek: data.dayOfWeek }),
+          ...(data.dayOfMonth !== undefined && { dayOfMonth: data.dayOfMonth }),
+          ...(data.monthOfYear !== undefined && { monthOfYear: data.monthOfYear }),
+          ...(data.time && { time: data.time }),
+          ...(data.timezone && { timezone: data.timezone }),
+          ...(data.reviewPeriodDays !== undefined && { reviewPeriodDays: data.reviewPeriodDays }),
+          ...(data.reminderDays && { reminderDays: data.reminderDays }),
+          ...(data.autoExecute !== undefined && { autoExecute: data.autoExecute }),
+          ...(data.notifyAdmins !== undefined && { notifyAdmins: data.notifyAdmins }),
+          ...(data.sendReportToOwners !== undefined && { sendReportToOwners: data.sendReportToOwners }),
+          ...(data.adminEmails && { adminEmails: data.adminEmails }),
+          ...(nextRunAt && { nextRunAt }),
         },
       });
 
@@ -1428,54 +1565,85 @@ export const accessReviewRouter = createTRPCRouter({
     }),
 });
 
-// Helper function to calculate next run date
+// Helper function to calculate next run date with timezone support
 function calculateNextRun(
   frequency: string,
   dayOfWeek?: number,
   dayOfMonth?: number,
-  time: string = '09:00'
+  time: string = '09:00',
+  monthOfYear?: number,
+  _timezone: string = 'UTC'
 ): Date {
   const now = new Date();
   const [hours, minutes] = time.split(':').map(Number);
-  const next = new Date(now);
+  let next = new Date(now);
 
   next.setHours(hours, minutes, 0, 0);
 
+  // Start from tomorrow to avoid running twice on the same day
+  if (next <= now) {
+    next.setDate(next.getDate() + 1);
+  }
+
   switch (frequency) {
-    case 'weekly':
+    case 'weekly': {
       const targetDay = dayOfWeek ?? 1; // Default to Monday
       const currentDay = next.getDay();
       let daysUntil = targetDay - currentDay;
-      if (daysUntil <= 0 || (daysUntil === 0 && next <= now)) {
+      if (daysUntil <= 0) {
         daysUntil += 7;
       }
       next.setDate(next.getDate() + daysUntil);
       break;
+    }
 
-    case 'monthly':
+    case 'monthly': {
       const targetDate = dayOfMonth ?? 1;
       next.setDate(targetDate);
       if (next <= now) {
         next.setMonth(next.getMonth() + 1);
       }
-      break;
-
-    case 'quarterly':
-      const quarterMonth = Math.floor(now.getMonth() / 3) * 3 + 3;
-      next.setMonth(quarterMonth);
-      next.setDate(dayOfMonth ?? 1);
-      if (next <= now) {
-        next.setMonth(next.getMonth() + 3);
+      // Handle months with fewer days
+      while (next.getDate() !== targetDate) {
+        next.setDate(0); // Go to last day of previous month
+        next.setMonth(next.getMonth() + 1);
+        next.setDate(Math.min(targetDate, new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate()));
       }
       break;
+    }
 
-    case 'yearly':
-      next.setMonth(0);
+    case 'quarterly': {
+      const quarterMonths = [0, 3, 6, 9]; // Jan, Apr, Jul, Oct
+      const currentMonth = now.getMonth();
+      let nextQuarterMonth = quarterMonths.find(m => m > currentMonth);
+      if (nextQuarterMonth === undefined) {
+        nextQuarterMonth = quarterMonths[0];
+        next.setFullYear(next.getFullYear() + 1);
+      }
+      next.setMonth(nextQuarterMonth);
+      next.setDate(dayOfMonth ?? 1);
+      if (next <= now) {
+        // Move to next quarter
+        const idx = quarterMonths.indexOf(nextQuarterMonth);
+        if (idx < quarterMonths.length - 1) {
+          next.setMonth(quarterMonths[idx + 1]);
+        } else {
+          next.setFullYear(next.getFullYear() + 1);
+          next.setMonth(quarterMonths[0]);
+        }
+      }
+      break;
+    }
+
+    case 'yearly': {
+      const targetMonth = (monthOfYear ?? 1) - 1; // Convert 1-12 to 0-11
+      next.setMonth(targetMonth);
       next.setDate(dayOfMonth ?? 1);
       if (next <= now) {
         next.setFullYear(next.getFullYear() + 1);
       }
       break;
+    }
   }
 
   return next;
