@@ -182,6 +182,9 @@ export const sitesRouter = createTRPCRouter({
       let updated = 0;
 
       for (const site of allSites) {
+        // Extract display name with fallbacks
+        const displayName = site.displayName || site.name || extractSiteNameFromUrl(site.webUrl) || 'Unnamed Site';
+
         const existing = await db.sharePointSite.findUnique({
           where: { graphId: site.id },
         });
@@ -190,7 +193,7 @@ export const sitesRouter = createTRPCRouter({
           await db.sharePointSite.update({
             where: { graphId: site.id },
             data: {
-              displayName: site.displayName || site.name,
+              displayName,
               webUrl: site.webUrl,
               siteCollection: site.siteCollection?.hostname || null,
               updatedAt: new Date(),
@@ -201,7 +204,7 @@ export const sitesRouter = createTRPCRouter({
           await db.sharePointSite.create({
             data: {
               graphId: site.id,
-              displayName: site.displayName || site.name,
+              displayName,
               webUrl: site.webUrl,
               siteCollection: site.siteCollection?.hostname || null,
             },
@@ -225,3 +228,28 @@ export const sitesRouter = createTRPCRouter({
     }
   }),
 });
+
+/**
+ * Extract site name from URL as fallback when displayName is missing
+ */
+function extractSiteNameFromUrl(url: string): string | null {
+  try {
+    const urlObj = new URL(url);
+    const pathParts = urlObj.pathname.split('/').filter(Boolean);
+
+    // Try to get the last meaningful part of the path
+    // e.g., /sites/MySite -> MySite, /teams/MyTeam -> MyTeam
+    if (pathParts.length >= 2) {
+      return pathParts[pathParts.length - 1];
+    }
+
+    // If just root, use hostname
+    if (pathParts.length === 0 || (pathParts.length === 1 && pathParts[0] === 'search')) {
+      return urlObj.hostname.split('.')[0];
+    }
+
+    return pathParts[0] || null;
+  } catch {
+    return null;
+  }
+}
