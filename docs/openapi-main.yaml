@@ -1148,6 +1148,30 @@ paths:
                       type: string
 
   # ==================== Microsoft ====================
+  /microsoft.checkConnection:
+    post:
+      tags: [Microsoft]
+      summary: Check Microsoft connection using app credentials (public)
+      security: []
+      responses:
+        '200':
+          description: Connection status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connected:
+                    type: boolean
+                  message:
+                    type: string
+                  tenantId:
+                    type: string
+                    nullable: true
+                  tenantName:
+                    type: string
+                    nullable: true
+
   /microsoft.status:
     post:
       tags: [Microsoft]
@@ -1729,6 +1753,9 @@ paths:
                 dueDate:
                   type: string
                   format: date-time
+                recurrence:
+                  type: string
+                  description: Recurrence pattern (e.g., weekly, monthly)
       responses:
         '200':
           description: Created campaign
@@ -1760,6 +1787,10 @@ paths:
                   type: string
                   format: date-time
                   nullable: true
+                recurrence:
+                  type: string
+                  nullable: true
+                  description: Recurrence pattern (e.g., weekly, monthly)
       responses:
         '200':
           description: Updated campaign
@@ -2136,6 +2167,10 @@ paths:
                 autoExecute:
                   type: boolean
                   default: false
+                sendReportToOwners:
+                  type: boolean
+                  default: true
+                  description: Send report emails to designated site owners
                 adminEmails:
                   type: array
                   items:
@@ -2163,15 +2198,46 @@ paths:
                   type: string
                 name:
                   type: string
+                description:
+                  type: string
                 enabled:
                   type: boolean
+                scope:
+                  type: object
+                  properties:
+                    siteUrls:
+                      type: array
+                      items:
+                        type: string
+                    includeDrives:
+                      type: boolean
+                    includeSubfolders:
+                      type: boolean
+                    maxDepth:
+                      type: integer
                 frequency:
                   type: string
                   enum: [weekly, monthly, quarterly, yearly]
+                dayOfWeek:
+                  type: integer
+                  minimum: 0
+                  maximum: 6
+                dayOfMonth:
+                  type: integer
+                  minimum: 1
+                  maximum: 31
+                time:
+                  type: string
                 reviewPeriodDays:
                   type: integer
                 autoExecute:
                   type: boolean
+                sendReportToOwners:
+                  type: boolean
+                adminEmails:
+                  type: array
+                  items:
+                    type: string
       responses:
         '200':
           description: Updated schedule
@@ -2261,6 +2327,27 @@ paths:
                       $ref: '#/components/schemas/DesignatedOwner'
                   pagination:
                     $ref: '#/components/schemas/Pagination'
+
+  /accessReview.getDesignatedOwner:
+    post:
+      tags: [Access Review]
+      summary: Get designated owner by ID
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Designated owner details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DesignatedOwner'
 
   /accessReview.createDesignatedOwner:
     post:
@@ -2413,6 +2500,40 @@ paths:
                   pagination:
                     $ref: '#/components/schemas/Pagination'
 
+  /accessReview.createNotification:
+    post:
+      tags: [Access Review]
+      summary: Create a notification
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, title, message]
+              properties:
+                type:
+                  type: string
+                  enum: [campaign_started, campaign_due_soon, campaign_overdue, review_assigned, execution_complete, schedule_triggered]
+                title:
+                  type: string
+                message:
+                  type: string
+                campaignId:
+                  type: string
+                recipientEmail:
+                  type: string
+                  format: email
+                sendEmail:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Created notification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReviewNotification'
+
   /accessReview.markNotificationRead:
     post:
       tags: [Access Review]
@@ -2438,6 +2559,30 @@ paths:
     post:
       tags: [Access Review]
       summary: Mark all notifications as read
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /accessReview.deleteNotification:
+    post:
+      tags: [Access Review]
+      summary: Delete a notification
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
       responses:
         '200':
           description: Success
