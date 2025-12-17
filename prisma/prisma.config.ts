@@ -1,4 +1,9 @@
-import { defineConfig } from 'prisma/config';
+import { config } from 'dotenv';
+import { defineConfig, env } from 'prisma/config';
+
+// Load .env.local first, fall back to .env
+config({ path: '.env.local' });
+config({ path: '.env' });
 
 export default defineConfig({
   earlyAccess: true,
@@ -12,6 +17,6 @@ export default defineConfig({
     },
   },
   datasource: {
-    url: process.env.DATABASE_URL!,
+    url: env('DATABASE_URL'),
   },
 });

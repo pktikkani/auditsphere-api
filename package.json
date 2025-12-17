@@ -23,6 +23,7 @@
     "@microsoft/microsoft-graph-types": "^2.43.1",
     "@prisma/adapter-pg": "^7.1.0",
     "@prisma/client": "^7.1.0",
+    "dotenv": "^17.2.3",
     "@react-pdf/renderer": "^4.3.1",
     "@trpc/server": "^11.7.2",
     "cors": "^2.8.5",
