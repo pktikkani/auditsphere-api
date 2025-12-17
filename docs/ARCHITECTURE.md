@@ -291,7 +291,28 @@ export function parseGraphResponse<T>(
 
 ## Authentication Flow
 
-### Azure AD Token Validation
+### Azure AD App Registration
+
+This API is called by the **auditsphere-spfx** web part running in SharePoint Online. Authentication is handled via Azure AD.
+
+**Azure AD App:** Document Intelligence API
+
+| Setting | Value |
+|---------|-------|
+| Client ID | `eca12ded-8416-41fd-ac0a-ffaccb1ecb04` |
+| Application ID URI | `api://eca12ded-8416-41fd-ac0a-ffaccb1ecb04` |
+| Exposed Scope | `access_as_user` |
+
+> **Important:** The Application ID URI must use the `api://{client-id}` format. The API validates tokens against this format in `src/trpc/init.ts`.
+
+### Deployment Branches
+
+| Branch | API URL | Purpose |
+|--------|---------|---------|
+| `main` | `https://auditsphere-api.nubewired.com` | All features |
+| `access-review` | `https://auditsphere-api-access.nubewired.com` | Access review only |
+
+### Token Validation
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -304,24 +325,42 @@ export function parseGraphResponse<T>(
 │     │   Web Part  │◀────────│   (tenant)      │                        │
 │     └─────────────┘  Token  └─────────────────┘                        │
 │                                                                          │
+│     Token claims:                                                        │
+│     - aud: "eca12ded-8416-41fd-ac0a-ffaccb1ecb04" (client ID)          │
+│     - scp: "access_as_user"                                             │
+│     - preferred_username: "user@tenant.com"                             │
+│                                                                          │
 │  2. SPFx sends token to API                                             │
 │     ┌─────────────┐         ┌─────────────────┐                        │
 │     │   SPFx      │────────▶│   AuditSphere   │                        │
 │     │   Web Part  │ Bearer  │   API           │                        │
 │     └─────────────┘  Token  └─────────────────┘                        │
 │                                                                          │
-│  3. API validates token                                                  │
+│  3. API validates token (src/trpc/init.ts)                              │
 │     ┌─────────────────────────────────────────────────────────────┐    │
 │     │ a. Fetch JWKS from Azure AD                                  │    │
-│     │ b. Verify JWT signature                                      │    │
-│     │ c. Check audience (client_id)                                │    │
-│     │ d. Check issuer (tenant)                                     │    │
-│     │ e. Check expiration                                          │    │
-│     │ f. Extract claims (userId, email, tenant)                    │    │
+│     │ b. Verify JWT signature (RS256)                              │    │
+│     │ c. Check audience ∈ [CLIENT_ID, api://CLIENT_ID]            │    │
+│     │ d. Check issuer matches tenant                               │    │
+│     │ e. Extract user email → find/create user in database        │    │
 │     └─────────────────────────────────────────────────────────────┘    │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Valid Audiences
+
+The API accepts tokens with either audience format:
+
+```typescript
+// src/trpc/init.ts
+const validAudiences = [
+  process.env.MICROSOFT_CLIENT_ID,                    // eca12ded-8416-41fd-ac0a-ffaccb1ecb04
+  `api://${process.env.MICROSOFT_CLIENT_ID}`,         // api://eca12ded-8416-41fd-ac0a-ffaccb1ecb04
+];
+```
+
+SPFx uses `AadHttpClient.getClient(clientId)` which results in tokens with the raw client ID as the audience.
 
 ### Context Creation
 
