@@ -358,6 +358,83 @@ const validAudiences = [
 
 SPFx uses `AadHttpClient.getClient(clientId)` which results in tokens with the raw client ID as the audience.
 
+### Detailed SPFx-to-API Authentication Flow
+
+This diagram shows the complete authentication flow from when the SPFx web part loads in SharePoint to when the API validates the request and returns data.
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────────┐
+│  SPFx WebPart   │     │     Azure AD     │     │   auditsphere-api   │
+│  (SharePoint)   │     │                  │     │     (Railway)       │
+└────────┬────────┘     └────────┬─────────┘     └──────────┬──────────┘
+         │                       │                          │
+         │  1. Request token     │                          │
+         │     for resource:     │                          │
+         │     eca12ded-8416-... │                          │
+         │     scope:            │                          │
+         │     access_as_user    │                          │
+         │──────────────────────▶│                          │
+         │                       │                          │
+         │  2. Return JWT        │                          │
+         │     aud: eca12ded-... │                          │
+         │     scp: access_as_   │                          │
+         │          user         │                          │
+         │◀──────────────────────│                          │
+         │                       │                          │
+         │  3. Call API with Authorization: Bearer <token>  │
+         │─────────────────────────────────────────────────▶│
+         │                       │                          │
+         │                       │  4. Fetch JWKS keys      │
+         │                       │◀─────────────────────────│
+         │                       │                          │
+         │                       │  5. Return public keys   │
+         │                       │─────────────────────────▶│
+         │                       │                          │
+         │                       │         6. Validate:     │
+         │                       │         - JWT signature  │
+         │                       │           (RS256)        │
+         │                       │         - audience =     │
+         │                       │           eca12ded-...   │
+         │                       │         - issuer =       │
+         │                       │           tenant ID      │
+         │                       │         - not expired    │
+         │                       │                          │
+         │                       │         7. Extract user: │
+         │                       │         - email from     │
+         │                       │           preferred_     │
+         │                       │           username       │
+         │                       │         - id from oid    │
+         │                       │                          │
+         │                       │         8. Find/create   │
+         │                       │            user in DB    │
+         │                       │                          │
+         │  9. Return data                                  │
+         │◀─────────────────────────────────────────────────│
+         │                       │                          │
+```
+
+**Key Points:**
+
+1. **SPFx Permission Request**: The `webApiPermissionRequests` in `config/package-solution.json` declares that the SPFx solution needs access to the API:
+   ```json
+   "webApiPermissionRequests": [{
+     "resource": "eca12ded-8416-41fd-ac0a-ffaccb1ecb04",
+     "scope": "access_as_user"
+   }]
+   ```
+
+2. **Admin Consent**: When the `.sppkg` is deployed, a SharePoint admin must approve this permission request in the SharePoint Admin Center → API Access.
+
+3. **Token Acquisition**: SPFx uses `AadHttpClient` to silently acquire tokens:
+   ```typescript
+   const client = await this.context.aadHttpClientFactory.getClient('eca12ded-8416-41fd-ac0a-ffaccb1ecb04');
+   const response = await client.get(apiUrl, AadHttpClient.configurations.v1);
+   ```
+
+4. **JWKS Caching**: The API caches Azure AD's public keys for 24 hours to avoid repeated JWKS fetches.
+
+5. **User Auto-Creation**: If a valid token is received but the user doesn't exist in the database, they are automatically created with a default `viewer` role.
+
 ### Context Creation
 
 ```typescript
